@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  // 回归默认，让 Prisma 在标准 Debian 环境下自动检测
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  password          String
+  promptCount       Int      @default(0)
+  imageCount        Int      @default(0)
+  lastImageGeneratedAt DateTime? // 上次生成图片的时间，用于计算CD
+  dailyImageCount   Int      @default(0) // 每日生成次数
+  lastDailyReset    DateTime? // 上次重置每日次数的时间
+  generationLogs    GenerationLog[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model VerificationCode {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model GenerationLog {
+  id             String   @id @default(uuid())
+  type           String   @default("PROMPT")
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail      String?
+  model          String?
+  endpoint       String?
+  requestPrompt  String?
+  imageUrl       String?
+  responseText   String?
+  success        Boolean  @default(true)
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
