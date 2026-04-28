@@ -247,10 +247,11 @@ export default function Home() {
       setImageAspectRatio(savedAspectRatio as any);
     }
 
-    // 加载 GPT-Image-2 模式（默认关闭，清除可能存在的旧设置）
-    // 清除旧的 GPT-Image-2 设置，确保不会因为之前的设置导致问题
-    localStorage.removeItem(`gpt_image2_mode_${scope}`);
-    localStorage.removeItem("gpt_image2_mode");
+    // 加载 GPT-Image-2 模式（从 localStorage 恢复用户设置）
+    const savedGptImage2Mode = localStorage.getItem(`gpt_image2_mode_${scope}`);
+    if (savedGptImage2Mode === 'true') {
+      setIsGptImage2Mode(true);
+    }
 
     // 优先从本地缓存恢复用户状态（避免闪烁）
     const cachedToken = localStorage.getItem("auth_token");
