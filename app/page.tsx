@@ -11,6 +11,10 @@ const AuthModal = dynamic(() => import("./components/AuthModal"), { ssr: false }
 export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
+  // GPT-Image-2 配置（通过环境变量设置）
+  const GPT_IMAGE_2_API_KEY = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "f5f8dc3f65454077b2fd6560";
+  const GPT_IMAGE_2_API_ENDPOINT = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1";
+  const GPT_IMAGE_2_MODEL = "gpt-image-2";
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "", recommended_settings: null });
   const [copied, setCopied] = useState("");
@@ -243,11 +247,10 @@ export default function Home() {
       setImageAspectRatio(savedAspectRatio as any);
     }
 
-    // 加载 GPT-Image-2 模式
-    const savedGptImage2 = readSetting(scope, "gpt_image2_mode") === "true";
-    if (savedGptImage2) {
-      setIsGptImage2Mode(true);
-    }
+    // 加载 GPT-Image-2 模式（默认关闭，清除可能存在的旧设置）
+    // 清除旧的 GPT-Image-2 设置，确保不会因为之前的设置导致问题
+    localStorage.removeItem(`gpt_image2_mode_${scope}`);
+    localStorage.removeItem("gpt_image2_mode");
 
     // 优先从本地缓存恢复用户状态（避免闪烁）
     const cachedToken = localStorage.getItem("auth_token");
@@ -748,9 +751,9 @@ Example Output:
           aspectRatio: imageAspectRatio,
           // 将自定义配置传给后端 (使用图片生成专用的配置)
           // GPT-Image-2 模式下覆盖为内置配置，不修改用户设置
-          apiKey: isGptImage2Mode ? "f5f8dc3f65454077b2fd6560" : (imageApiKey || undefined),
-          apiEndpoint: isGptImage2Mode ? "https://gpt2.zeabur.app/v1" : (imageApiEndpoint || undefined),
-          modelName: isGptImage2Mode ? "gpt-image-2" : (imageModelName || undefined)
+          apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
+          apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
+          modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
         }),
         signal: controller.signal
       });
@@ -943,9 +946,9 @@ Example Output:
           prompt: promptInstruction,
           image_url: uploadedImage,
           aspectRatio: imageAspectRatio,
-          apiKey: isGptImage2Mode ? "f5f8dc3f65454077b2fd6560" : (imageApiKey || undefined),
-          apiEndpoint: isGptImage2Mode ? "https://gpt2.zeabur.app/v1" : (imageApiEndpoint || undefined),
-          modelName: isGptImage2Mode ? "gpt-image-2" : (imageModelName || undefined)
+          apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
+          apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
+          modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
         }),
         signal: controller.signal
       });
@@ -985,9 +988,9 @@ Example Output:
             prompt: retryPrompt,
             image_url: uploadedImage,
             aspectRatio: imageAspectRatio,
-            apiKey: isGptImage2Mode ? "f5f8dc3f65454077b2fd6560" : (imageApiKey || undefined),
-            apiEndpoint: isGptImage2Mode ? "https://gpt2.zeabur.app/v1" : (imageApiEndpoint || undefined),
-            modelName: isGptImage2Mode ? "gpt-image-2" : (imageModelName || undefined)
+            apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
+            apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
+            modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
           }),
           signal: retryController.signal
         });
