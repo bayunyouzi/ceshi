@@ -11,10 +11,10 @@ const AuthModal = dynamic(() => import("./components/AuthModal"), { ssr: false }
 export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
-  // GPT-Image-2 配置（通过环境变量设置）
-  const GPT_IMAGE_2_API_KEY = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "f5f8dc3f65454077b2fd6560";
-  const GPT_IMAGE_2_API_ENDPOINT = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1";
-  const GPT_IMAGE_2_MODEL = "gpt-image-2";
+  // GPT-Image-2 配置（从环境变量读取，在 Zeabur 中配置）
+  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "";
+  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1";
+  const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "", recommended_settings: null });
   const [copied, setCopied] = useState("");
@@ -743,6 +743,11 @@ Example Output:
       
       // GPT-Image-2 模式：直接从前端调用 API，绕过后端
       if (isGptImage2Mode) {
+        // 检查是否配置了 API Key
+        if (!GPT_IMAGE_2_API_KEY) {
+          throw new Error("GPT-Image-2 未配置 API Key，请在 Zeabur 环境变量中设置 NEXT_PUBLIC_GPT_IMAGE_2_API_KEY");
+        }
+        
         console.log('[GPT-Image-2] 直接前端调用模式');
         
         const sizeMap: Record<string, string> = {
@@ -765,7 +770,7 @@ Example Output:
         
         console.log('[GPT-Image-2] Payload:', gpt2Payload);
         
-        const gpt2Response = await fetch("https://gpt2.zeabur.app/v1/images/generations", {
+        const gpt2Response = await fetch(`${GPT_IMAGE_2_API_ENDPOINT}/images/generations`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -792,8 +797,8 @@ Example Output:
         }
         
         // 修复 http 为 https
-        if (imageUrl.startsWith('http://gpt2.zeabur.app/')) {
-          imageUrl = imageUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+        if (imageUrl.startsWith('http://')) {
+          imageUrl = imageUrl.replace('http://', 'https://');
         }
         
         console.log('[GPT-Image-2] 图片 URL:', imageUrl);
@@ -1002,9 +1007,85 @@ Example Output:
       }
       lastImg2ImgFingerprintRef.current = img2imgFingerprint;
       lastImg2ImgAtRef.current = now;
-      const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
 
       const token = localStorage.getItem("auth_token");
+      
+      // GPT-Image-2 模式：直接从前端调用 API
+      if (isGptImage2Mode) {
+        // 检查是否配置了 API Key
+        if (!GPT_IMAGE_2_API_KEY) {
+          throw new Error("GPT-Image-2 未配置 API Key，请在 Zeabur 环境变量中设置 NEXT_PUBLIC_GPT_IMAGE_2_API_KEY");
+        }
+        
+        console.log('[GPT-Image-2 图生图] 直接前端调用模式');
+        
+        const sizeMap: Record<string, string> = {
+          "1:1": "1024x1024",
+          "4:3": "1024x768",
+          "3:4": "768x1024",
+          "16:9": "1024x576",
+          "9:16": "576x1024",
+          "3:2": "1024x640",
+          "2:3": "640x1024"
+        };
+        
+        const gpt2Payload = {
+          model: GPT_IMAGE_2_MODEL,
+          prompt: promptInstruction,
+          n: 1,
+          response_format: "url",
+          size: sizeMap[imageAspectRatio] || "1024x1024",
+          image: uploadedImage
+        };
+        
+        console.log('[GPT-Image-2 图生图] Payload:', { ...gpt2Payload, image: '[BASE64_DATA]' });
+        
+        const gpt2Response = await fetch(`${GPT_IMAGE_2_API_ENDPOINT}/images/generations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GPT_IMAGE_2_API_KEY}`
+          },
+          body: JSON.stringify(gpt2Payload),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!gpt2Response.ok) {
+          const errText = await gpt2Response.text();
+          throw new Error(`GPT-Image-2 API 错误 (${gpt2Response.status}): ${errText.substring(0, 200)}`);
+        }
+        
+        const gpt2Data = await gpt2Response.json();
+        console.log('[GPT-Image-2 图生图] Response:', gpt2Data);
+        
+        let imageUrl = gpt2Data?.data?.[0]?.url;
+        
+        if (!imageUrl) {
+          throw new Error("GPT-Image-2 未返回图片 URL");
+        }
+        
+        // 修复 http 为 https
+        if (imageUrl.startsWith('http://')) {
+          imageUrl = imageUrl.replace('http://', 'https://');
+        }
+        
+        console.log('[GPT-Image-2 图生图] 图片 URL:', imageUrl);
+        setGeneratedImage(imageUrl);
+        setImageMeta({
+          displayModel: 'GPT-Image-2',
+          actualModel: GPT_IMAGE_2_MODEL,
+          requestedModel: GPT_IMAGE_2_MODEL,
+          modelChanged: false
+        });
+        if (!imageApiKey) deductLimit('image');
+        return;
+      }
+      
+      // 非 GPT-Image-2 模式：走后端
+      const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
+
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
