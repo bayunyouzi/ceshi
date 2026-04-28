@@ -741,14 +741,22 @@ Example Output:
     try {
       const token = localStorage.getItem("auth_token");
       
-      // GPT-Image-2 模式：直接从前端调用 API，绕过后端
-      if (isGptImage2Mode) {
-        // 检查是否配置了 API Key
-        if (!GPT_IMAGE_2_API_KEY) {
-          throw new Error("GPT-Image-2 未配置 API Key，请在 Zeabur 环境变量中设置 NEXT_PUBLIC_GPT_IMAGE_2_API_KEY");
+      // GPT-Image-2 模式或用户自定义 API：直接从前端调用，绕过后端
+      if (isGptImage2Mode || (imageApiKey && imageApiEndpoint)) {
+        const apiKey = isGptImage2Mode ? GPT_IMAGE_2_API_KEY : imageApiKey;
+        const apiEndpoint = isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : imageApiEndpoint;
+        const model = isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || "gpt-image-2");
+        
+        if (!apiKey) {
+          throw new Error("请先配置 API Key");
+        }
+        if (!apiEndpoint) {
+          throw new Error("请先配置 API Endpoint");
         }
         
-        console.log('[GPT-Image-2] 直接前端调用模式');
+        console.log('[前端直调] 模式:', isGptImage2Mode ? 'GPT-Image-2' : '用户自定义');
+        console.log('[前端直调] Endpoint:', apiEndpoint);
+        console.log('[前端直调] Model:', model);
         
         const sizeMap: Record<string, string> = {
           "1:1": "1024x1024",
@@ -760,40 +768,53 @@ Example Output:
           "2:3": "640x1024"
         };
         
-        const gpt2Payload = {
-          model: GPT_IMAGE_2_MODEL,
+        const payload = {
+          model: model,
           prompt: prompt,
           n: 1,
           response_format: "url",
           size: sizeMap[imageAspectRatio] || "1024x1024"
         };
         
-        console.log('[GPT-Image-2] Payload:', gpt2Payload);
+        console.log('[前端直调] Payload:', payload);
         
-        const gpt2Response = await fetch(`${GPT_IMAGE_2_API_ENDPOINT}/images/generations`, {
+        // 确定请求端点
+        let requestUrl = apiEndpoint;
+        if (!apiEndpoint.includes('/images/generations') && !apiEndpoint.includes('/chat/completions')) {
+          // 如果端点不包含具体路径，添加 /v1/images/generations
+          if (apiEndpoint.endsWith('/v1')) {
+            requestUrl = `${apiEndpoint}/images/generations`;
+          } else if (!apiEndpoint.includes('/v1')) {
+            requestUrl = `${apiEndpoint}/v1/images/generations`;
+          }
+        }
+        
+        console.log('[前端直调] 请求URL:', requestUrl);
+        
+        const apiResponse = await fetch(requestUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${GPT_IMAGE_2_API_KEY}`
+            "Authorization": `Bearer ${apiKey}`
           },
-          body: JSON.stringify(gpt2Payload),
+          body: JSON.stringify(payload),
           signal: controller.signal
         });
         
         clearTimeout(timeoutId);
         
-        if (!gpt2Response.ok) {
-          const errText = await gpt2Response.text();
-          throw new Error(`GPT-Image-2 API 错误 (${gpt2Response.status}): ${errText.substring(0, 200)}`);
+        if (!apiResponse.ok) {
+          const errText = await apiResponse.text();
+          throw new Error(`API 错误 (${apiResponse.status}): ${errText.substring(0, 200)}`);
         }
         
-        const gpt2Data = await gpt2Response.json();
-        console.log('[GPT-Image-2] Response:', gpt2Data);
+        const apiData = await apiResponse.json();
+        console.log('[前端直调] Response:', apiData);
         
-        let imageUrl = gpt2Data?.data?.[0]?.url;
+        let imageUrl = apiData?.data?.[0]?.url || apiData?.images?.[0]?.url;
         
         if (!imageUrl) {
-          throw new Error("GPT-Image-2 未返回图片 URL");
+          throw new Error("API 未返回图片 URL");
         }
         
         // 修复 http 为 https
@@ -801,19 +822,19 @@ Example Output:
           imageUrl = imageUrl.replace('http://', 'https://');
         }
         
-        console.log('[GPT-Image-2] 图片 URL:', imageUrl);
+        console.log('[前端直调] 图片 URL:', imageUrl);
         setGeneratedImage(imageUrl);
         setImageMeta({
-          displayModel: 'GPT-Image-2',
-          actualModel: GPT_IMAGE_2_MODEL,
-          requestedModel: GPT_IMAGE_2_MODEL,
+          displayModel: isGptImage2Mode ? 'GPT-Image-2' : model,
+          actualModel: model,
+          requestedModel: model,
           modelChanged: false
         });
         if (!imageApiKey) deductLimit('image');
         return;
       }
       
-      // 非 GPT-Image-2 模式：走后端
+      // 无自定义配置：走后端默认
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
@@ -1010,14 +1031,17 @@ Example Output:
 
       const token = localStorage.getItem("auth_token");
       
-      // GPT-Image-2 模式：直接从前端调用 API
-      if (isGptImage2Mode) {
-        // 检查是否配置了 API Key
-        if (!GPT_IMAGE_2_API_KEY) {
-          throw new Error("GPT-Image-2 未配置 API Key，请在 Zeabur 环境变量中设置 NEXT_PUBLIC_GPT_IMAGE_2_API_KEY");
+      // GPT-Image-2 模式或用户自定义 API：直接从前端调用
+      if (isGptImage2Mode || (imageApiKey && imageApiEndpoint)) {
+        const apiKey = isGptImage2Mode ? GPT_IMAGE_2_API_KEY : imageApiKey;
+        const apiEndpoint = isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : imageApiEndpoint;
+        const model = isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || "gpt-image-2");
+        
+        if (!apiKey) {
+          throw new Error("请先配置 API Key");
         }
         
-        console.log('[GPT-Image-2 图生图] 直接前端调用模式 - 使用 /v1/images/edits 接口');
+        console.log('[前端直调 图生图] 模式:', isGptImage2Mode ? 'GPT-Image-2' : '用户自定义');
         
         // 将 base64 转换为 Blob
         const base64Data = uploadedImage.split(',')[1];
@@ -1036,22 +1060,37 @@ Example Output:
         
         // 使用 FormData 格式（multipart/form-data）
         const formData = new FormData();
-        formData.append('model', GPT_IMAGE_2_MODEL);
+        formData.append('model', model);
         formData.append('prompt', promptInstruction);
         formData.append('n', '1');
         formData.append('image', file);
         
-        console.log('[GPT-Image-2 图生图] FormData:', {
-          model: GPT_IMAGE_2_MODEL,
+        console.log('[前端直调 图生图] FormData:', {
+          model: model,
           prompt: promptInstruction,
           n: 1,
           image: `[File: ${file.size} bytes, ${mimeType}]`
         });
         
-        const gpt2Response = await fetch(`${GPT_IMAGE_2_API_ENDPOINT}/images/edits`, {
+        // 确定请求端点
+        let requestUrl = apiEndpoint;
+        if (!apiEndpoint.includes('/images/edits') && !apiEndpoint.includes('/images/generations')) {
+          if (apiEndpoint.endsWith('/v1')) {
+            requestUrl = `${apiEndpoint}/images/edits`;
+          } else if (!apiEndpoint.includes('/v1')) {
+            requestUrl = `${apiEndpoint}/v1/images/edits`;
+          }
+        } else if (apiEndpoint.includes('/images/generations')) {
+          // 如果是 generations 端点，改为 edits
+          requestUrl = apiEndpoint.replace('/images/generations', '/images/edits');
+        }
+        
+        console.log('[前端直调 图生图] 请求URL:', requestUrl);
+        
+        const apiResponse = await fetch(requestUrl, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${GPT_IMAGE_2_API_KEY}`
+            "Authorization": `Bearer ${apiKey}`
           },
           body: formData,
           signal: controller.signal
@@ -1059,41 +1098,38 @@ Example Output:
         
         clearTimeout(timeoutId);
         
-        if (!gpt2Response.ok) {
-          const errText = await gpt2Response.text();
-          throw new Error(`GPT-Image-2 API 错误 (${gpt2Response.status}): ${errText.substring(0, 200)}`);
+        if (!apiResponse.ok) {
+          const errText = await apiResponse.text();
+          throw new Error(`API 错误 (${apiResponse.status}): ${errText.substring(0, 200)}`);
         }
         
-        const gpt2Data = await gpt2Response.json();
-        console.log('[GPT-Image-2 图生图] Response:', gpt2Data);
+        const apiData = await apiResponse.json();
+        console.log('[前端直调 图生图] Response:', apiData);
         
-        let imageUrl = gpt2Data?.data?.[0]?.url || gpt2Data?.data?.[0]?.b64_json;
+        let imageUrl = apiData?.data?.[0]?.url || apiData?.data?.[0]?.b64_json;
         
         if (!imageUrl) {
-          throw new Error("GPT-Image-2 未返回图片");
+          throw new Error("API 未返回图片");
         }
         
-        // 如果是 base64，转换为 URL
-        if (imageUrl.startsWith('data:')) {
-          // 直接使用 base64
-        } else if (imageUrl.startsWith('http://')) {
-          // 修复 http 为 https
+        // 如果是 base64，直接使用；如果是 http，转为 https
+        if (!imageUrl.startsWith('data:') && imageUrl.startsWith('http://')) {
           imageUrl = imageUrl.replace('http://', 'https://');
         }
         
-        console.log('[GPT-Image-2 图生图] 图片:', imageUrl.substring(0, 100));
+        console.log('[前端直调 图生图] 图片:', imageUrl.substring(0, 100));
         setGeneratedImage(imageUrl);
         setImageMeta({
-          displayModel: 'GPT-Image-2',
-          actualModel: GPT_IMAGE_2_MODEL,
-          requestedModel: GPT_IMAGE_2_MODEL,
+          displayModel: isGptImage2Mode ? 'GPT-Image-2' : model,
+          actualModel: model,
+          requestedModel: model,
           modelChanged: false
         });
         if (!imageApiKey) deductLimit('image');
         return;
       }
       
-      // 非 GPT-Image-2 模式：走后端
+      // 无自定义配置：走后端默认
       const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
 
       const response = await fetch("/api/generate-image", {
