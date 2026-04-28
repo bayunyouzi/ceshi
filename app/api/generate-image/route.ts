@@ -58,22 +58,8 @@ const normalizeEndpoint = (raw: string | undefined, fallback: string, routeKind:
   if (!raw || typeof raw !== "string") return fallback;
   const trimmed = raw.trim();
   if (!trimmed) return fallback;
-  try {
-    const url = new URL(trimmed);
-    const pathname = url.pathname.replace(/\/+$/, "");
-    // For img2img, always use images/generations regardless of the current path
-    if (isImg2Img) {
-      url.pathname = "/v1/images/generations";
-    } else if (pathname === "/v1/chat/completions") {
-      // Redirect chat completions to images/generations
-      url.pathname = routeKind === "video" ? "/v1/videos/generations" : "/v1/images/generations";
-    } else if (pathname === "/v1" || pathname === "") {
-      url.pathname = routeKind === "video" ? "/v1/videos/generations" : "/v1/images/generations";
-    }
-    return url.toString();
-  } catch {
-    return fallback;
-  }
+  // 直接返回用户配置的端点，不做任何自动补全
+  return trimmed;
 };
 
 const isImagesGenerationEndpoint = (endpoint: string) => {
