@@ -1513,6 +1513,31 @@ The result must be **sharp, crystal-clear, and professional product photography 
                     {(isTxt2VideoMode ? videoLoading : loading) ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
                     {isTxt2VideoMode ? (videoLoading ? "视频生成中..." : `开始生成视频 (${VIDEO_DURATION_SECONDS}s)`) : (loading ? "灵感生成中..." : "生成提示词")}
                   </button>
+
+                  {/* GPT-Image-2 一键切换按钮 - 移到这里更显眼 */}
+                  {!isTxt2VideoMode && !isImg2ImgMode && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => {
+                          setIsGptImage2Mode(!isGptImage2Mode);
+                          setError("");
+                        }}
+                        className={`w-full py-3 rounded-2xl font-bold text-sm tracking-widest transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${isGptImage2Mode ? "bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-emerald-500/10 border-2 border-emerald-500/50 hover:bg-emerald-500/20 text-emerald-400"}`}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        {isGptImage2Mode ? (
+                          <>GPT-Image-2 已启用 · 剩余 {gptImage2Remaining}/50 次 · 点击关闭</>
+                        ) : (
+                          <>✨ 切换 GPT-Image-2 模型（每天 50 次免费）</>
+                        )}
+                      </button>
+                      {isGptImage2Mode && (
+                        <p className="text-[10px] text-center text-amber-400/80 mt-2 font-mono">
+                          ⚠️ 此模型响应较慢，请耐心等待（最长 3 分钟）
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-6 animate-in fade-in">
@@ -1665,33 +1690,17 @@ The result must be **sharp, crystal-clear, and professional product photography 
                 </div>
               )}
 
-              {/* GPT-Image-2 Model Toggle */}
+              {/* Generate Image Button */}
               {!isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && (
                 <div className="mb-4 shrink-0">
-                  <button
-                    onClick={() => {
-                      setIsGptImage2Mode(!isGptImage2Mode);
-                      setError("");
-                    }}
-                    className={`w-full py-3 rounded-2xl font-bold text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${isGptImage2Mode ? "bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-400 hover:text-white"}`}
+                  <button 
+                    onClick={() => handleGenerateImage(result.prompt)}
+                    disabled={imageLoading}
+                    className={`w-full py-4 rounded-2xl font-black text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${imageLoading ? "bg-indigo-500/20 text-indigo-400/50 cursor-wait border border-indigo-500/30" : isGptImage2Mode ? "bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] hover:scale-[0.98]" : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-[0_0_30px_rgba(99,102,241,0.3)] hover:shadow-[0_0_40px_rgba(99,102,241,0.5)] hover:scale-[0.98]"}`}
                   >
-                    {isGptImage2Mode ? (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        GPT-Image-2 已启用 · 今日剩余 {gptImage2Remaining} 次
-                      </>
-                    ) : (
-                      <>
-                        <ImageIcon className="w-4 h-4" />
-                        切换到 GPT-Image-2（每天限额 50 次）
-                      </>
-                    )}
+                    {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
+                    {imageLoading ? (isGptImage2Mode ? "GPT-Image-2 生成中..." : "图片生成中...") : (isGptImage2Mode ? "✨ 使用 GPT-Image-2 生成" : "🎨 一键生成画面")}
                   </button>
-                  {isGptImage2Mode && (
-                    <p className="text-[10px] text-center text-amber-400/80 mt-2 font-mono">
-                      ⚠️ 此模型响应较慢，请耐心等待（最长 3 分钟）
-                    </p>
-                  )}
                 </div>
               )}
 
