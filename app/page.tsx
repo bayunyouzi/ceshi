@@ -741,17 +741,74 @@ Example Output:
     try {
       const token = localStorage.getItem("auth_token");
       
-      // GPT-Image-2 模式调试日志
+      // GPT-Image-2 模式：直接从前端调用 API，绕过后端
       if (isGptImage2Mode) {
-        console.log('[GPT-Image-2 前端] 发送请求参数:', {
-          isGptImage2Mode,
-          apiKey: GPT_IMAGE_2_API_KEY.substring(0, 8) + '...',
-          apiEndpoint: GPT_IMAGE_2_API_ENDPOINT,
-          modelName: GPT_IMAGE_2_MODEL,
-          aspectRatio: imageAspectRatio
+        console.log('[GPT-Image-2] 直接前端调用模式');
+        
+        const sizeMap: Record<string, string> = {
+          "1:1": "1024x1024",
+          "4:3": "1024x768",
+          "3:4": "768x1024",
+          "16:9": "1024x576",
+          "9:16": "576x1024",
+          "3:2": "1024x640",
+          "2:3": "640x1024"
+        };
+        
+        const gpt2Payload = {
+          model: GPT_IMAGE_2_MODEL,
+          prompt: prompt,
+          n: 1,
+          response_format: "url",
+          size: sizeMap[imageAspectRatio] || "1024x1024"
+        };
+        
+        console.log('[GPT-Image-2] Payload:', gpt2Payload);
+        
+        const gpt2Response = await fetch("https://gpt2.zeabur.app/v1/images/generations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GPT_IMAGE_2_API_KEY}`
+          },
+          body: JSON.stringify(gpt2Payload),
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
+        
+        if (!gpt2Response.ok) {
+          const errText = await gpt2Response.text();
+          throw new Error(`GPT-Image-2 API 错误 (${gpt2Response.status}): ${errText.substring(0, 200)}`);
+        }
+        
+        const gpt2Data = await gpt2Response.json();
+        console.log('[GPT-Image-2] Response:', gpt2Data);
+        
+        let imageUrl = gpt2Data?.data?.[0]?.url;
+        
+        if (!imageUrl) {
+          throw new Error("GPT-Image-2 未返回图片 URL");
+        }
+        
+        // 修复 http 为 https
+        if (imageUrl.startsWith('http://gpt2.zeabur.app/')) {
+          imageUrl = imageUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+        }
+        
+        console.log('[GPT-Image-2] 图片 URL:', imageUrl);
+        setGeneratedImage(imageUrl);
+        setImageMeta({
+          displayModel: 'GPT-Image-2',
+          actualModel: GPT_IMAGE_2_MODEL,
+          requestedModel: GPT_IMAGE_2_MODEL,
+          modelChanged: false
+        });
+        if (!imageApiKey) deductLimit('image');
+        return;
       }
       
+      // 非 GPT-Image-2 模式：走后端
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
