@@ -389,6 +389,13 @@ export async function POST(req: Request) {
     const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
     // GPT-Image-2 也使用 images/generations API 格式
     const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint);
+
+    // 调试日志：记录关键参数
+    console.log('[generate-image] request params:', {
+      isGpt2Model, isImg2Img, useImagesGenerationApi,
+      actualModel, finalEndpoint: finalEndpoint?.substring(0, 80),
+      hasApiKey: !!finalApiKey, modelName
+    });
     const canAutoSwitchImageKey = !apiKey && !isVideo && useImagesGenerationApi;
     if (canAutoSwitchImageKey) {
       const { start, end } = getChinaDayRange();
@@ -980,6 +987,7 @@ export async function POST(req: Request) {
       const maxBadGatewayRetry = 3; // Allow up to 3 retries for 502/Bad Gateway errors
 
       response = await doRequest(activePayload);
+      console.log('[generate-image] first response status:', response?.status, 'model:', activeModel, 'endpoint:', finalEndpoint?.substring(0, 60));
 
       // 重试逻辑
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -1128,6 +1136,7 @@ export async function POST(req: Request) {
       if (!response || !response.ok) {
           const errorText = lastErrorText || "";
           const status = response?.status ?? 0;
+          console.error('[generate-image] request failed:', status, errorText.substring(0, 200));
           const error = parseApiError(status, errorText);
           logErrorAsync(error, {
             userId: user?.id,
