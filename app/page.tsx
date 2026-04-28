@@ -781,18 +781,28 @@ Example Output:
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.error(err);
-      let errMsg = err.message || "生成图片失败";
-      
-      if (err.name === 'AbortError') {
-        errMsg = "⚠️ 请求超时：生图接口响应时间过长，请稍后重试。";
-      } else if (errMsg.includes("PROHIBITED_CONTENT") || errMsg.includes("prompt_blocked") || errMsg.includes("content-moderated") || errMsg.includes("content_moderated") || errMsg.includes("Moderated")) {
-        // 针对 Gemini/Google/Grok 安全拦截的优化提示
-        errMsg = "⚠️ 生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启"安全模式"或修改输入词后再试。";
-      } else if (errMsg.includes("502") || errMsg.includes("Bad Gateway") || errMsg.includes("JSON") || errMsg.includes("Unexpected token")) {
-        errMsg = "⚠️ 上游服务暂时拥堵或返回异常，请稍后再次点击重试。";
+      const errMsg = err.message || "生成图片失败";
+      let displayMsg = errMsg;
+
+      if (err.name === "AbortError") {
+        displayMsg = "请求超时，生成时间过长，请稍后重试";
+      } else if (
+        errMsg.includes("PROHIBITED_CONTENT") ||
+        errMsg.includes("prompt_blocked") ||
+        errMsg.includes("content-moderated") ||
+        errMsg.includes("Moderated")
+      ) {
+        displayMsg = "提示词触发安全审查，请尝试修改内容或开启安全模式";
+      } else if (
+        errMsg.includes("502") ||
+        errMsg.includes("Bad Gateway") ||
+        errMsg.includes("JSON") ||
+        errMsg.includes("Unexpected token")
+      ) {
+        displayMsg = "上游服务暂时异常，请稍后重试";
       }
-      
-      setError(errMsg);
+
+      setError(displayMsg);
     } finally {
       setImageLoading(false);
       imageRequestLockRef.current = false;
@@ -874,7 +884,7 @@ Example Output:
     } catch (err: any) {
       clearTimeout(timeoutId);
       if (err.name === "AbortError") {
-        setError("⚠️ 请求超时：Grok 官方视频接口生成时间较长，请稍后重试。");
+        setError("请求超时，Grok 官方视频接口生成时间较长，请稍后重试");
       } else {
         setError(err.message || "生成视频失败，请稍后重试");
       }
@@ -997,14 +1007,15 @@ Example Output:
 
     } catch (err: any) {
       clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        setError("⚠️ 请求超时：图像处理时间过长，请稍后重试。");
-      } else if (err.message?.includes('content-moderated')) {
-        setError("⚠️ 生成失败：内容触发了严格的安全审查。请尝试：1. 开启'安全模式'；2. 减少提示词中的敏感部位描述；3. 换一个更保守的模型。");
-      } else if (err.message?.includes("502") || err.message?.includes("Bad Gateway") || err.message?.includes("JSON") || err.message?.includes("Unexpected token")) {
-        setError("⚠️ 上游服务暂时拥堵或返回异常，请稍后再次点击重试。");
+      const msg = err.message || "生成图片失败，请稍后重试";
+      if (err.name === "AbortError") {
+        setError("请求超时，图像处理时间过长，请稍后重试");
+      } else if (msg.includes("content-moderated") || msg.includes("Moderated")) {
+        setError("内容触发安全审查，请尝试开启安全模式或修改提示词");
+      } else if (msg.includes("502") || msg.includes("Bad Gateway") || msg.includes("JSON")) {
+        setError("上游服务暂时异常，请稍后重试");
       } else {
-        setError(err.message || "生成图片失败，请稍后重试");
+        setError(msg);
       }
     } finally {
       setImageLoading(false);
@@ -1199,17 +1210,18 @@ Example Output:
 
     } catch (err: any) {
       clearTimeout(timeoutId);
-      let errorMsg = err.message || "连接服务器失败";
-      if (err.name === 'AbortError') {
-        errorMsg = "⚠️ 请求超时：AI 响应时间过长，请稍后重试。";
-      } else if (errorMsg.includes("Failed to fetch")) {
-        errorMsg = isVideoMode
-          ? "⚠️ 视频提示词接口连接失败，已切回 grok-4.20-0309-non-reasoning 默认模型，请重试。"
-          : "⚠️ 接口连接失败，请检查网络或稍后重试。";
-      } else if (errorMsg.includes("content-moderated") || errorMsg.includes("moderation")) {
-        errorMsg = "⚠️ 触发了 AI 安全审查机制。创意模式下生成大尺度内容有概率被拦截，请稍后再试或微调输入词。";
+      const msg = err.message || "连接服务器失败";
+      let displayMsg = msg;
+      if (err.name === "AbortError") {
+        displayMsg = "请求超时，AI 响应时间过长，请稍后重试";
+      } else if (msg.includes("Failed to fetch")) {
+        displayMsg = isVideoMode
+          ? "接口连接失败，请检查网络后重试"
+          : "接口连接失败，请检查网络或稍后重试";
+      } else if (msg.includes("content-moderated") || msg.includes("moderation")) {
+        displayMsg = "触发了 AI 安全审查，请稍后再试或微调输入词";
       }
-      setError(errorMsg);
+      setError(displayMsg);
       console.error(err);
     } finally {
       setLoading(false);
