@@ -382,6 +382,20 @@ export async function POST(req: Request) {
     const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
     // GPT-Image-2 也使用 images/generations API 格式
     const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint);
+    
+    // 调试日志：GPT-Image-2 请求参数
+    if (isGpt2Model) {
+      console.log('[GPT-Image-2 Debug] Request params:', {
+        receivedApiKey: apiKey ? `${apiKey.slice(0, 8)}...` : 'undefined',
+        receivedEndpoint: apiEndpoint,
+        receivedModel: modelName,
+        finalApiKey: finalApiKey ? `${finalApiKey.slice(0, 8)}...` : 'undefined',
+        finalEndpoint,
+        finalModel,
+        actualModel,
+        useImagesGenerationApi
+      });
+    }
 
     const canAutoSwitchImageKey = !apiKey && !isVideo && useImagesGenerationApi;
     if (canAutoSwitchImageKey) {
