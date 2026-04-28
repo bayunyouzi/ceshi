@@ -1017,36 +1017,43 @@ Example Output:
           throw new Error("GPT-Image-2 未配置 API Key，请在 Zeabur 环境变量中设置 NEXT_PUBLIC_GPT_IMAGE_2_API_KEY");
         }
         
-        console.log('[GPT-Image-2 图生图] 直接前端调用模式');
+        console.log('[GPT-Image-2 图生图] 直接前端调用模式 - 使用 /v1/images/edits 接口');
         
-        const sizeMap: Record<string, string> = {
-          "1:1": "1024x1024",
-          "4:3": "1024x768",
-          "3:4": "768x1024",
-          "16:9": "1024x576",
-          "9:16": "576x1024",
-          "3:2": "1024x640",
-          "2:3": "640x1024"
-        };
+        // 将 base64 转换为 Blob
+        const base64Data = uploadedImage.split(',')[1];
+        const mimeMatch = uploadedImage.match(/data:([^;]+);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
         
-        const gpt2Payload = {
+        // Base64 解码为二进制
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mimeType });
+        const file = new File([blob], 'image.png', { type: mimeType });
+        
+        // 使用 FormData 格式（multipart/form-data）
+        const formData = new FormData();
+        formData.append('model', GPT_IMAGE_2_MODEL);
+        formData.append('prompt', promptInstruction);
+        formData.append('n', '1');
+        formData.append('image', file);
+        
+        console.log('[GPT-Image-2 图生图] FormData:', {
           model: GPT_IMAGE_2_MODEL,
           prompt: promptInstruction,
           n: 1,
-          response_format: "url",
-          size: sizeMap[imageAspectRatio] || "1024x1024",
-          image: uploadedImage
-        };
+          image: `[File: ${file.size} bytes, ${mimeType}]`
+        });
         
-        console.log('[GPT-Image-2 图生图] Payload:', { ...gpt2Payload, image: '[BASE64_DATA]' });
-        
-        const gpt2Response = await fetch(`${GPT_IMAGE_2_API_ENDPOINT}/images/generations`, {
+        const gpt2Response = await fetch(`${GPT_IMAGE_2_API_ENDPOINT}/images/edits`, {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             "Authorization": `Bearer ${GPT_IMAGE_2_API_KEY}`
           },
-          body: JSON.stringify(gpt2Payload),
+          body: formData,
           signal: controller.signal
         });
         
@@ -1060,18 +1067,21 @@ Example Output:
         const gpt2Data = await gpt2Response.json();
         console.log('[GPT-Image-2 图生图] Response:', gpt2Data);
         
-        let imageUrl = gpt2Data?.data?.[0]?.url;
+        let imageUrl = gpt2Data?.data?.[0]?.url || gpt2Data?.data?.[0]?.b64_json;
         
         if (!imageUrl) {
-          throw new Error("GPT-Image-2 未返回图片 URL");
+          throw new Error("GPT-Image-2 未返回图片");
         }
         
-        // 修复 http 为 https
-        if (imageUrl.startsWith('http://')) {
+        // 如果是 base64，转换为 URL
+        if (imageUrl.startsWith('data:')) {
+          // 直接使用 base64
+        } else if (imageUrl.startsWith('http://')) {
+          // 修复 http 为 https
           imageUrl = imageUrl.replace('http://', 'https://');
         }
         
-        console.log('[GPT-Image-2 图生图] 图片 URL:', imageUrl);
+        console.log('[GPT-Image-2 图生图] 图片:', imageUrl.substring(0, 100));
         setGeneratedImage(imageUrl);
         setImageMeta({
           displayModel: 'GPT-Image-2',

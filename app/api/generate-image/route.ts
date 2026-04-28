@@ -547,15 +547,15 @@ export async function POST(req: Request) {
               responseText: startText.slice(0, 2000)
             }
           });
-          const error = parseApiError(startResponse.status, startText);
-          logErrorAsync(error, {
+          const startApiError = parseApiError(startResponse.status, startText);
+          logErrorAsync(startApiError, {
             userId: user?.id,
             userEmail: user?.email,
             model: actualModel,
             endpoint: finalEndpoint,
             requestPrompt: String(finalPrompt).slice(0, 2000)
           });
-          return respond({ error: error.message }, startResponse.status || 500);
+          return respond({ error: startApiError.message }, startResponse.status || 500);
         }
 
         let startData: any;
@@ -650,15 +650,15 @@ export async function POST(req: Request) {
                 responseText: pollText.slice(0, 2000)
               }
             });
-            const error = parseApiError(pollResponse.status, pollText);
-            logErrorAsync(error, {
+            const pollApiError = parseApiError(pollResponse.status, pollText);
+            logErrorAsync(pollApiError, {
               userId: user?.id,
               userEmail: user?.email,
               model: actualModel,
               endpoint: statusEndpoint,
               requestPrompt: String(finalPrompt).slice(0, 2000)
             });
-            return respond({ error: error.message }, pollResponse.status || 500);
+            return respond({ error: pollApiError.message }, pollResponse.status || 500);
           }
 
           let pollData: any;
@@ -1137,15 +1137,15 @@ export async function POST(req: Request) {
           const errorText = lastErrorText || "";
           const status = response?.status ?? 0;
           console.error('[generate-image] request failed:', status, errorText.substring(0, 200));
-          const error = parseApiError(status, errorText);
-          logErrorAsync(error, {
+          const respError = parseApiError(status, errorText);
+          logErrorAsync(respError, {
             userId: user?.id,
             userEmail: user?.email,
             model: activeModel,
             endpoint: finalEndpoint,
             requestPrompt: String(finalPrompt).slice(0, 2000)
           });
-          return respond({ error: error.message }, status || 500);
+          return respond({ error: respError.message }, status || 500);
       }
 
       if (!finalData) {
@@ -1206,11 +1206,11 @@ export async function POST(req: Request) {
   } catch (err: any) {
     console.error('[generate-image] UNCAUGHT ERROR:', err);
     console.error('[generate-image] Error stack:', err?.stack);
-    const error = buildErrorResponse(
+    const sysError = buildErrorResponse(
       ErrorCode.SYSTEM_INTERNAL_ERROR,
       err instanceof Error ? err.message : String(err)
     );
-    logErrorAsync(error, {});
-    return respond({ error: `${error.message} (${err instanceof Error ? err.message : 'unknown'})` }, error.statusCode);
+    logErrorAsync(sysError, {});
+    return respond({ error: `${sysError.message} (${err instanceof Error ? err.message : 'unknown'})` }, sysError.statusCode);
   }
 }
