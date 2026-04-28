@@ -1,28 +1,12 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle } from "lucide-react";
 
-import AuthModal from "./components/AuthModal";
-import { tagLibrary } from "../lib/tagLibrary";
+import { getRandomTags } from "../lib/utils";
+import { img2ImgPrompts, img2ImgEffectOptions } from "../lib/img2imgPrompts";
 
-function getRandomTags(category: keyof typeof tagLibrary, count: number = 3, securityLevel: 'safe' | 'creative' | 'nsfw' = 'safe') {
-  const lib = tagLibrary[category] as any;
-  if (!lib) return "";
-  let tags: string[] = [];
-  if (Array.isArray(lib)) {
-    tags = lib;
-  } else if (lib && typeof lib === "object") {
-    const safeTags = Array.isArray(lib.safe) ? lib.safe : [];
-    const creativeTags = Array.isArray(lib.creative) ? lib.creative : [];
-    const nsfwTags = Array.isArray(lib.nsfw) ? lib.nsfw : [];
-    if (securityLevel === "safe") tags = safeTags;
-    if (securityLevel === "creative") tags = [...safeTags, ...creativeTags];
-    if (securityLevel === "nsfw") tags = [...safeTags, ...creativeTags, ...nsfwTags];
-  }
-  if (!Array.isArray(tags) || tags.length === 0) return "";
-  const shuffled = [...tags].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count).join(", ");
-}
+const AuthModal = dynamic(() => import("./components/AuthModal"), { ssr: false });
 
 export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
@@ -556,18 +540,6 @@ Example Output:
 `;
   };
 
-  useEffect(() => {
-    // 加载用户自定义的设置（如果有）
-    const scope = getSettingScope();
-    const savedKey = readSetting(scope, "creative_api_key");
-    const savedEndpoint = readSetting(scope, "creative_api_endpoint");
-    const savedModel = readSetting(scope, "creative_model_name");
-    
-    if (savedKey) setApiKey(savedKey);
-    setApiEndpoint(savedEndpoint || "");
-    setModelName(savedModel || "");
-  }, []);
-
   const saveSettings = () => {
     const scope = getSettingScope();
     localStorage.setItem(`creative_api_key_${scope}`, apiKey);
@@ -815,7 +787,7 @@ Example Output:
         errMsg = "⚠️ 请求超时：生图接口响应时间过长，请稍后重试。";
       } else if (errMsg.includes("PROHIBITED_CONTENT") || errMsg.includes("prompt_blocked") || errMsg.includes("content-moderated") || errMsg.includes("content_moderated") || errMsg.includes("Moderated")) {
         // 针对 Gemini/Google/Grok 安全拦截的优化提示
-        errMsg = "⚠️ 生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启“安全模式”或修改输入词后再试。";
+        errMsg = "⚠️ 生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启"安全模式"或修改输入词后再试。";
       } else if (errMsg.includes("502") || errMsg.includes("Bad Gateway") || errMsg.includes("JSON") || errMsg.includes("Unexpected token")) {
         errMsg = "⚠️ 上游服务暂时拥堵或返回异常，请稍后再次点击重试。";
       }
@@ -932,95 +904,12 @@ Example Output:
     const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 60000); // GPT-Image-2: 310秒，其他: 60秒
 
     try {
-      let promptInstruction = "";
-
-      // 添加调试日志，确保选项正确
-      console.log('[图生图] 选择的效果:', img2ImgEffect);
-      console.log('[图生图] 用户额外输入:', img2ImgInput);
-
-      switch (img2ImgEffect) {
-        case 'figure': 
-          promptInstruction = `Your primary mission is to convert the subject from the user's photo into a **photorealistic, ultra-high-resolution miniature model**, displayed in a realistic studio/workshop setting. The result must be **pin-sharp, crystal clear, and professional-grade**, with **no blur, no distortion, and no random changes in pose**.
-
-**Core Directive: Subject Analysis & Priority Assignment (CRITICAL FIRST STEP)**
-1. Identify the subject of the image.
-2. Apply the correct rule set:
-
-* **RULE SET A - Person, creature, or animal:**
-   - **If a face is visible:** Prioritize **Character Fidelity and Sharp Likeness**.
-   - **If NO face is visible (e.g., back view):** Prioritize **Pose and Form Fidelity**.
-     ⚠️ **Do NOT invent or fabricate a face**. Preserve the exact pose of the subject in the input photo.
-
-* **RULE SET B - Vehicle:** Ensure perfect **Form, Proportions, Surface Finish, and Key Details** with **ultra-sharp clarity**.
-
-* **RULE SET C - Building/structure:** Ensure **Architectural Integrity** with clear **geometry, materials, and fine details**, all rendered in **sharp focus**.
-
-**Scene Composition (Strictly follow these details):**
-1. **The Model:** The miniature model on a desk or workshop table, rendered in **ultra-sharp detail**, faithfully matching the input subject’s **pose and proportions**.
-2. **Computer Monitor:** In the background, a monitor displays relevant 3D modeling software, showing the same subject. The screen must be **readable, crisp, not blurry**.
-3. **Environment:** A realistic, well-lit studio or office desk, with details like tools or keyboards, rendered in **professional product photography clarity**.`; 
-          break;
-        case 'figure_box':
-          promptInstruction = `Your primary mission is to convert the subject from the user's photo into a **photorealistic, ultra-high-resolution miniature figure**, presented in its commercial packaging.
-The result must be **sharp, crystal-clear, and professional product photography quality**, with **no blurriness or distortion**.
-
-**Core Directive: Subject Analysis & Priority Assignment (CRITICAL FIRST STEP)**
-1. Identify the subject of the image.
-2. Apply the correct rule set:
-
-* **RULE SET A - Person, creature, or animal:**
-   - **If a face is visible:** Your top priority is **Likeness**. Render the face in sharp detail, with accurate proportions.
-   - **If NO face is visible (e.g., back view):** Your top priority is **Pose and Form Fidelity**. **Do NOT invent or add a face** ⁃ faithfully preserve the back-view pose from the source photo.
-
-* **RULE SET B - Vehicle:** Prioritize exact **Form, Proportions, Surface Finish, and Key Details**.
-
-* **RULE SET C - Building/structure:** Prioritize **Architectural Integrity** (geometry, materials, fine details).
-
-**Scene Details:**
-1. **The Model:** The miniature figure must be **highly detailed, sharp, and exactly match the pose from the input photo**.
-2. **The Base:** A clean, simple display base.
-3. **The Packaging:** Behind the model, show a collector’s style box featuring the subject.
-4. **Environment:** A professional, well-lit indoor studio setting, **sharp focus, no blur, no noise**.`;
-          break;
-        case 'cosplay': 
-          promptInstruction = `Generate a highly detailed photo of a human cosplaying this illustration, at Comiket. Exactly replicate the same pose, body posture, hand gestures, facial expression, and camera framing as in the original illustration. Keep the same angle, perspective, and composition, without any deviation`; 
-          break;
-        case 'cosplay_selfie':
-          promptInstruction = `Create a cosplay selfie version from the reference character. Keep identity locked: same face traits, hair, outfit and colors. Front camera selfie composition, arm-length perspective, realistic skin texture, indoor ambient light, slight phone camera grain, high detail. Return image only.`;
-          break;
-        case 'real': 
-          promptInstruction = `Convert the reference character to an ultra-realistic, highly detailed photorealistic style while strictly preserving identity. Keep the exact same face geometry, same hairstyle, same costume details, same pose and camera framing as the original image. Realistic skin texture, natural lighting, subtle film grain, sharp and believable, no cartoon style. DO NOT change the subject's pose or clothing.`; 
-          break;
-        case 'anime': 
-          promptInstruction = `Redraw the reference image into clean 2D anime style while strictly preserving identity and composition. Keep exact same face shape, same eye style, same hairstyle, same costume pattern and color, same pose and camera angle. Crisp lineart, cel shading, vibrant but controlled colors, masterpiece, high detail. DO NOT change the subject's pose or clothing.`; 
-          break;
-        case 'chibi':
-          promptInstruction = `Convert the reference character into chibi style. Keep recognizable identity cues: hairstyle, eye color, costume palette, signature accessories. 1:2 head-to-body ratio, cute proportions, clean lines, soft shading, simple background, high clarity. Return image only.`;
-          break;
-        case 'sticker':
-          promptInstruction = `Convert the reference character into a sticker illustration. Keep identity locked and outfit recognizable. Bold clean outline, transparent or simple plain background, centered composition, high contrast colors, printable quality. Return image only.`;
-          break;
-        case 'first_person':
-          promptInstruction = `Generate a first-person perspective scene featuring the reference character. Keep the character identity, face traits, hairstyle and outfit consistent with reference. Cinematic POV composition, realistic depth and lighting, high detail. Return image only.`;
-          break;
-        case 'turnaround':
-          promptInstruction = `Create a three-view turnaround of the reference character (front, side, back) in one image. Keep identity and costume details fully consistent across all three views. Clean neutral background, design-sheet style, high detail, no text. Return image only.`;
-          break;
-        case 'storyboard':
-          promptInstruction = `Create a 4-panel storyboard based on the reference character. Keep identity, outfit and hairstyle consistent in every panel. Panels should show coherent action progression with varied camera shots. Clean comic layout, no text bubbles, high detail. Return image only.`;
-          break;
-        case 'random': 
-        default:
-          promptInstruction = `Generate a new creative image based on the reference while preserving core identity: same face features, hairstyle, outfit style and color family. Allow creative scene and lighting variation, but keep character recognizability high. Return image only.`; 
-          break;
-      }
+      let promptInstruction = img2ImgPrompts[img2ImgEffect] || img2ImgPrompts.random;
       
+      // 添加用户额外需求
       if (img2ImgInput && img2ImgInput.trim()) {
         promptInstruction += `\n\nUser Additional Request: ${img2ImgInput}`;
       }
-
-      // 添加调试日志，验证最终prompt
-      console.log('[图生图] 最终生成的prompt:', promptInstruction.substring(0, 200) + '...');
 
       const imageSeed = `${uploadedImage.slice(0, 128)}|${uploadedImage.length}`;
       const img2imgFingerprint = `${hashText(promptInstruction.slice(0, 500))}|${hashText(imageSeed)}|${imageAspectRatio}|${img2ImgEffect}`;
@@ -1739,14 +1628,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
                   <div>
                     <label className="text-xs font-mono text-zinc-400 mb-3 block tracking-widest">转换效果 / Style</label>
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
-                      {[
-                        { id: 'figure', label: '手办化' }, { id: 'figure_box', label: '盒装手办' },
-                        { id: 'cosplay', label: 'COS化' }, { id: 'cosplay_selfie', label: 'COS自拍' },
-                        { id: 'real', label: '真人化' }, { id: 'anime', label: '动漫化' },
-                        { id: 'chibi', label: 'Q版化' }, { id: 'sticker', label: '贴纸化' },
-                        { id: 'first_person', label: '第一视角' }, { id: 'turnaround', label: '三视图' },
-                        { id: 'storyboard', label: '分镜化' }, { id: 'random', label: '随机变异' },
-                      ].map((effect) => (
+                      {img2ImgEffectOptions.map((effect) => (
                         <button
                           key={effect.id}
                           onClick={() => setImg2ImgEffect(effect.id)}

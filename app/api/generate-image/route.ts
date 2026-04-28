@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth';
 import { isQuotaExhaustedError } from './quota';
 import { getVideoQuotaForUser } from '@/lib/videoQuota';
 import { parseApiError, logErrorAsync, buildErrorResponse, ErrorCode } from '@/lib/errorHandler';
+import { getChinaDayRange } from '@/lib/utils';
 
 // 图片验证结果接口
 interface ValidationResult {
@@ -51,20 +52,6 @@ const cleanupExpiredIdempotency = () => {
       idempotencyCache.delete(key);
     }
   }
-};
-
-const getChinaDayRange = () => {
-  const nowMs = Date.now();
-  const chinaMs = nowMs + 8 * 60 * 60 * 1000;
-  const chinaDate = new Date(chinaMs);
-  const y = chinaDate.getUTCFullYear();
-  const m = chinaDate.getUTCMonth();
-  const d = chinaDate.getUTCDate();
-  const dayStartUtcMs = Date.UTC(y, m, d) - 8 * 60 * 60 * 1000;
-  return {
-    start: new Date(dayStartUtcMs),
-    end: new Date(dayStartUtcMs + 24 * 60 * 60 * 1000)
-  };
 };
 
 const normalizeEndpoint = (raw: string | undefined, fallback: string, routeKind: "image" | "video") => {
@@ -390,12 +377,6 @@ export async function POST(req: Request) {
     // GPT-Image-2 也使用 images/generations API 格式
     const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint);
 
-    // 调试日志：记录关键参数
-    console.log('[generate-image] request params:', {
-      isGpt2Model, isImg2Img, useImagesGenerationApi,
-      actualModel, finalEndpoint: finalEndpoint?.substring(0, 80),
-      hasApiKey: !!finalApiKey, modelName
-    });
     const canAutoSwitchImageKey = !apiKey && !isVideo && useImagesGenerationApi;
     if (canAutoSwitchImageKey) {
       const { start, end } = getChinaDayRange();
@@ -987,7 +968,6 @@ export async function POST(req: Request) {
       const maxBadGatewayRetry = 3; // Allow up to 3 retries for 502/Bad Gateway errors
 
       response = await doRequest(activePayload);
-      console.log('[generate-image] first response status:', response?.status, 'model:', activeModel, 'endpoint:', finalEndpoint?.substring(0, 60));
 
       // 重试逻辑
       for (let attempt = 0; attempt < 5; attempt++) {
