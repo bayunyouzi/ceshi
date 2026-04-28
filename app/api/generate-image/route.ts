@@ -1203,14 +1203,14 @@ export async function POST(req: Request) {
       throw fetchError;
     }
 
-  } catch (error: any) {
-    console.error('[generate-image] UNCAUGHT ERROR:', error);
-    console.error('[generate-image] Error stack:', error?.stack);
-    const err = buildErrorResponse(
+  } catch (err: any) {
+    console.error('[generate-image] UNCAUGHT ERROR:', err);
+    console.error('[generate-image] Error stack:', err?.stack);
+    const error = buildErrorResponse(
       ErrorCode.SYSTEM_INTERNAL_ERROR,
-      error instanceof Error ? error.message : String(error)
+      err instanceof Error ? err.message : String(err)
     );
-    logErrorAsync(err, {});
-    return respond({ error: `${err.message} (${error instanceof Error ? error.message : 'unknown'})` }, err.statusCode);
+    logErrorAsync(error, {});
+    return respond({ error: `${error.message} (${err instanceof Error ? err.message : 'unknown'})` }, error.statusCode);
   }
 }
