@@ -740,6 +740,18 @@ Example Output:
     
     try {
       const token = localStorage.getItem("auth_token");
+      
+      // GPT-Image-2 模式调试日志
+      if (isGptImage2Mode) {
+        console.log('[GPT-Image-2 前端] 发送请求参数:', {
+          isGptImage2Mode,
+          apiKey: GPT_IMAGE_2_API_KEY.substring(0, 8) + '...',
+          apiEndpoint: GPT_IMAGE_2_API_ENDPOINT,
+          modelName: GPT_IMAGE_2_MODEL,
+          aspectRatio: imageAspectRatio
+        });
+      }
+      
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {

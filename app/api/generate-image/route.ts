@@ -1204,11 +1204,13 @@ export async function POST(req: Request) {
     }
 
   } catch (error: any) {
+    console.error('[generate-image] UNCAUGHT ERROR:', error);
+    console.error('[generate-image] Error stack:', error?.stack);
     const err = buildErrorResponse(
       ErrorCode.SYSTEM_INTERNAL_ERROR,
       error instanceof Error ? error.message : String(error)
     );
     logErrorAsync(err, {});
-    return respond({ error: err.message }, err.statusCode);
+    return respond({ error: `${err.message} (${error instanceof Error ? error.message : 'unknown'})` }, err.statusCode);
   }
 }

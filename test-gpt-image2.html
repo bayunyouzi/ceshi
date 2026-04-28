@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT-Image-2 测试工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        .config-section {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .config-section h3 {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+            font-weight: 500;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .result-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 12px;
+        }
+        .result-section h3 {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        .log-area {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .image-result {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .image-result img {
+            max-width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            flex: 1;
+            padding: 12px;
+            background: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 GPT-Image-2 API 测试工具</h1>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('direct')">直接调用 API</button>
+            <button class="tab" onclick="switchTab('backend')">通过后端 API</button>
+        </div>
+        
+        <div id="direct-tab">
+            <div class="config-section">
+                <h3>📝 请求配置</h3>
+                <div class="form-group">
+                    <label>API Endpoint:</label>
+                    <input type="text" id="apiEndpoint" value="https://gpt2.zeabur.app/v1/images/generations">
+                </div>
+                <div class="form-group">
+                    <label>API Key:</label>
+                    <input type="text" id="apiKey" value="f5f8dc3f65454077b2fd6560">
+                </div>
+                <div class="form-group">
+                    <label>Model:</label>
+                    <input type="text" id="modelName" value="gpt-image-2">
+                </div>
+                <div class="form-group">
+                    <label>图片尺寸:</label>
+                    <select id="imageSize">
+                        <option value="1024x1024">1024x1024 (1:1)</option>
+                        <option value="1024x768">1024x768 (4:3)</option>
+                        <option value="768x1024">768x1024 (3:4)</option>
+                        <option value="1024x576">1024x576 (16:9)</option>
+                        <option value="576x1024">576x1024 (9:16)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>提示词 (Prompt):</label>
+                    <textarea id="prompt">a cute fluffy cat sitting on a windowsill, sunlight streaming in, cozy atmosphere, detailed fur, warm colors</textarea>
+                </div>
+            </div>
+            
+            <button class="btn" onclick="testDirectAPI()" id="directBtn">🚀 直接调用 API</button>
+        </div>
+        
+        <div id="backend-tab" style="display: none;">
+            <div class="config-section">
+                <h3>🔗 后端 API 配置</h3>
+                <div class="form-group">
+                    <label>后端 API 地址:</label>
+                    <input type="text" id="backendEndpoint" value="https://your-app.zeabur.app/api/generate-image" placeholder="替换为你的实际部署地址">
+                </div>
+                <div class="form-group">
+                    <label>提示词 (Prompt):</label>
+                    <textarea id="backendPrompt">a cute fluffy cat sitting on a windowsill, sunlight streaming in, cozy atmosphere</textarea>
+                </div>
+            </div>
+            
+            <button class="btn" onclick="testBackendAPI()" id="backendBtn">🚀 通过后端调用</button>
+        </div>
+        
+        <div class="result-section">
+            <h3>📊 执行结果</h3>
+            <div id="statusArea"></div>
+            <div class="log-area" id="logArea">等待执行...</div>
+            <div class="image-result" id="imageResult"></div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('direct-tab').style.display = tab === 'direct' ? 'block' : 'none';
+            document.getElementById('backend-tab').style.display = tab === 'backend' ? 'block' : 'none';
+        }
+
+        function log(message, type = 'info') {
+            const logArea = document.getElementById('logArea');
+            const timestamp = new Date().toLocaleTimeString();
+            const colorMap = {
+                'info': '#d4d4d4',
+                'success': '#4ec9b0',
+                'error': '#f48771',
+                'warning': '#dcdcaa'
+            };
+            logArea.innerHTML += `<span style="color:${colorMap[type]}">[${timestamp}] ${message}</span>\n`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        function showStatus(message, type) {
+            const statusArea = document.getElementById('statusArea');
+            statusArea.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        async function testDirectAPI() {
+            const btn = document.getElementById('directBtn');
+            const logArea = document.getElementById('logArea');
+            const imageResult = document.getElementById('imageResult');
+            
+            logArea.innerHTML = '';
+            imageResult.innerHTML = '';
+            
+            const endpoint = document.getElementById('apiEndpoint').value;
+            const apiKey = document.getElementById('apiKey').value;
+            const model = document.getElementById('modelName').value;
+            const size = document.getElementById('imageSize').value;
+            const prompt = document.getElementById('prompt').value;
+
+            log('=== 开始测试 GPT-Image-2 API ===', 'info');
+            log(`Endpoint: ${endpoint}`, 'info');
+            log(`Model: ${model}`, 'info');
+            log(`Size: ${size}`, 'info');
+            log(`Prompt: ${prompt.substring(0, 100)}...`, 'info');
+            log(`API Key: ${apiKey.substring(0, 8)}...****`, 'info');
+            log('', 'info');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ 生成中...';
+            showStatus('正在生成图片，请耐心等待（GPT-Image-2 响应较慢，约需 20-40 秒）...', 'info');
+
+            const startTime = Date.now();
+
+            try {
+                const payload = {
+                    model: model,
+                    prompt: prompt,
+                    n: 1,
+                    response_format: "url",
+                    size: size
+                };
+                
+                log('发送请求...', 'warning');
+                log(`Payload: ${JSON.stringify(payload, null, 2)}`, 'info');
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                log(`响应状态: ${response.status} (耗时: ${elapsed}秒)`, response.ok ? 'success' : 'error');
+
+                const responseText = await response.text();
+                log(`响应内容: ${responseText.substring(0, 500)}...`, 'info');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${responseText}`);
+                }
+
+                const data = JSON.parse(responseText);
+                log('', 'info');
+                log('=== 解析响应数据 ===', 'info');
+                log(`完整响应: ${JSON.stringify(data, null, 2)}`, 'info');
+
+                let imageUrl = data?.data?.[0]?.url || data?.images?.[0]?.url;
+                
+                if (imageUrl) {
+                    // 修复 http 为 https
+                    if (imageUrl.startsWith('http://gpt2.zeabur.app/')) {
+                        imageUrl = imageUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+                        log('已修复 http 为 https', 'warning');
+                    }
+                    
+                    log('', 'info');
+                    log('✅ 成功获取图片 URL!', 'success');
+                    log(`图片地址: ${imageUrl}`, 'success');
+                    
+                    imageResult.innerHTML = `
+                        <p style="margin-bottom: 15px; color: #155724; font-weight: 600;">✅ 图片生成成功！</p>
+                        <img src="${imageUrl}" alt="Generated Image" onload="log('图片加载成功', 'success')" onerror="log('图片加载失败', 'error')">
+                        <p style="margin-top: 15px;"><a href="${imageUrl}" target="_blank" style="color: #667eea;">在新窗口打开图片</a></p>
+                    `;
+                    showStatus(`✅ 生成成功！耗时 ${elapsed} 秒`, 'success');
+                } else {
+                    throw new Error('未能从响应中提取图片 URL');
+                }
+
+            } catch (error) {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                log('', 'info');
+                log(`❌ 错误: ${error.message}`, 'error');
+                log(`堆栈: ${error.stack}`, 'error');
+                showStatus(`❌ 生成失败: ${error.message} (耗时 ${elapsed} 秒)`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 直接调用 API';
+            }
+        }
+
+        async function testBackendAPI() {
+            const btn = document.getElementById('backendBtn');
+            const logArea = document.getElementById('logArea');
+            const imageResult = document.getElementById('imageResult');
+            
+            logArea.innerHTML = '';
+            imageResult.innerHTML = '';
+            
+            const endpoint = document.getElementById('backendEndpoint').value;
+            const prompt = document.getElementById('backendPrompt').value;
+
+            log('=== 开始测试后端 API ===', 'info');
+            log(`后端地址: ${endpoint}`, 'info');
+            log(`Prompt: ${prompt}`, 'info');
+            log('', 'info');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ 生成中...';
+            showStatus('正在通过后端生成图片...', 'info');
+
+            const startTime = Date.now();
+
+            try {
+                const payload = {
+                    prompt: prompt,
+                    aspectRatio: "1:1",
+                    apiKey: "f5f8dc3f65454077b2fd6560",
+                    apiEndpoint: "https://gpt2.zeabur.app/v1",
+                    modelName: "gpt-image-2"
+                };
+                
+                log('发送请求到后端...', 'warning');
+                log(`Payload: ${JSON.stringify(payload, null, 2)}`, 'info');
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                log(`响应状态: ${response.status} (耗时: ${elapsed}秒)`, response.ok ? 'success' : 'error');
+
+                const data = await response.json();
+                log(`响应数据: ${JSON.stringify(data, null, 2)}`, 'info');
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                let imageUrl = data?.data?.[0]?.url || data?.url || data?.imageUrl;
+                
+                if (imageUrl) {
+                    log('', 'info');
+                    log('✅ 成功获取图片!', 'success');
+                    
+                    imageResult.innerHTML = `
+                        <p style="margin-bottom: 15px; color: #155724; font-weight: 600;">✅ 图片生成成功！</p>
+                        <img src="${imageUrl}" alt="Generated Image">
+                    `;
+                    showStatus(`✅ 生成成功！耗时 ${elapsed} 秒`, 'success');
+                } else {
+                    throw new Error('未能从响应中提取图片');
+                }
+
+            } catch (error) {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                log('', 'info');
+                log(`❌ 错误: ${error.message}`, 'error');
+                showStatus(`❌ 生成失败: ${error.message} (耗时 ${elapsed} 秒)`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 通过后端调用';
+            }
+        }
+    </script>
+</body>
+</html>
