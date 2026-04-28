@@ -28,7 +28,7 @@ export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "" });
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -60,6 +60,22 @@ export default function Home() {
     requestedModel?: string;
     modelChanged?: boolean;
   } | null>(null);
+
+  // GPT-Image-2 模型配置
+  const [isGptImage2Mode, setIsGptImage2Mode] = useState(false);
+  const GPTIMAGE2_API_ENDPOINT = "https://gpt2.zeabur.app/v1";
+  const GPTIMAGE2_API_KEY = "f5f8dc3f65454077b2fd6560";
+  const GPTIMAGE2_MODEL_NAME = "gpt-image-2";
+  const GPTIMAGE2_DAILY_LIMIT = 50;
+  const [gptImage2Remaining, setGptImage2Remaining] = useState(GPTIMAGE2_DAILY_LIMIT);
+
+  const getChinaDateKey = () =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
   const [videoLoading, setVideoLoading] = useState(false);
   const [generatedVideo, setGeneratedVideo] = useState("");
   const VIDEO_DURATION_SECONDS = 10;
@@ -238,6 +254,18 @@ export default function Home() {
       image: savedImageCount ? parseInt(savedImageCount) : 5,
       video: 0
     });
+
+    // 加载 GPT-Image-2 剩余次数
+    const savedGptImage2Date = localStorage.getItem("gpt_image2_date");
+    const savedGptImage2Count = localStorage.getItem("gpt_image2_count");
+    const today = getChinaDateKey();
+    if (savedGptImage2Date === today && savedGptImage2Count) {
+      setGptImage2Remaining(Math.max(0, parseInt(savedGptImage2Count)));
+    } else {
+      setGptImage2Remaining(GPTIMAGE2_DAILY_LIMIT);
+      localStorage.setItem("gpt_image2_date", today);
+      localStorage.setItem("gpt_image2_count", GPTIMAGE2_DAILY_LIMIT.toString());
+    }
   }, []);
 
   const handleLogout = () => {
@@ -598,8 +626,16 @@ Example Output:
 
   const handleGenerateImage = async (prompt: string) => {
     // 如果没有配置自定义 Image API Key，才进行次数检查
-    if (!imageApiKey) {
+    if (!imageApiKey && !isGptImage2Mode) {
       if (!checkLimit('image')) return;
+    }
+
+    // GPT-Image-2 次数检查
+    if (isGptImage2Mode) {
+      if (gptImage2Remaining <= 0) {
+        setError(`GPT-Image-2 今日次数已用完（每天限额 ${GPTIMAGE2_DAILY_LIMIT} 次）`);
+        return;
+      }
     }
 
     setImageLoading(true);
@@ -608,7 +644,8 @@ Example Output:
     setImageMeta(null);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+    // GPT-Image-2 响应较慢，增加超时到 180 秒
+    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 180000 : 60000);
     
     try {
       const token = localStorage.getItem("auth_token");
@@ -621,9 +658,9 @@ Example Output:
         body: JSON.stringify({ 
           prompt,
           // 将自定义配置传给后端 (使用图片生成专用的配置)
-          apiKey: imageApiKey || undefined,
-          apiEndpoint: imageApiEndpoint || undefined,
-          modelName: imageModelName || undefined
+          apiKey: isGptImage2Mode ? GPTIMAGE2_API_KEY : (imageApiKey || undefined),
+          apiEndpoint: isGptImage2Mode ? GPTIMAGE2_API_ENDPOINT : (imageApiEndpoint || undefined),
+          modelName: isGptImage2Mode ? GPTIMAGE2_MODEL_NAME : (imageModelName || undefined)
         }),
         signal: controller.signal
       });
@@ -634,6 +671,21 @@ Example Output:
       
       if (data.error) {
         throw new Error(data.error);
+      }
+
+      // GPT-Image-2 专用处理
+      if (isGptImage2Mode) {
+        const gptImage2Url = extractImageUrlFromAny(data);
+        if (gptImage2Url) {
+          setGeneratedImage(gptImage2Url);
+          setImageMeta({ displayModel: "gpt-image-2" });
+          // 扣除 GPT-Image-2 次数
+          const newCount = gptImage2Remaining - 1;
+          setGptImage2Remaining(newCount);
+          localStorage.setItem("gpt_image2_count", newCount.toString());
+          return;
+        }
+        throw new Error("GPT-Image-2 未能返回图片");
       }
 
       const extractedImage = extractImageUrlFromAny(data);
@@ -657,10 +709,12 @@ Example Output:
       let errMsg = err.message || "生成图片失败";
       
       if (err.name === 'AbortError') {
-        errMsg = "⚠️ 请求超时：生图接口响应时间过长，请稍后重试。";
+        errMsg = isGptImage2Mode 
+          ? "⚠️ GPT-Image-2 请求超时：此模型响应较慢，请耐心等待或稍后重试。" 
+          : "⚠️ 请求超时：生图接口响应时间过长，请稍后重试。";
       } else if (errMsg.includes("PROHIBITED_CONTENT") || errMsg.includes("prompt_blocked") || errMsg.includes("content-moderated") || errMsg.includes("content_moderated") || errMsg.includes("Moderated")) {
         // 针对 Gemini/Google/Grok 安全拦截的优化提示
-        errMsg = "⚠️ 生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启“安全模式”或修改输入词后再试。";
+        errMsg = "⚠️ 生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启"安全模式"或修改输入词后再试。";
       }
       
       setError(errMsg);
@@ -788,7 +842,7 @@ Example Output:
 * **RULE SET C - Building/structure:** Ensure **Architectural Integrity** with clear **geometry, materials, and fine details**, all rendered in **sharp focus**.
 
 **Scene Composition (Strictly follow these details):**
-1. **The Model:** The miniature model on a desk or workshop table, rendered in **ultra-sharp detail**, faithfully matching the input subject’s **pose and proportions**.
+1. **The Model:** The miniature model on a desk or workshop table, rendered in **ultra-sharp detail**, faithfully matching the input subject's **pose and proportions**.
 2. **Computer Monitor:** In the background, a monitor displays relevant 3D modeling software, showing the same subject. The screen must be **readable, crisp, not blurry**.
 3. **Environment:** A realistic, well-lit studio or office desk, with details like tools or keyboards, rendered in **professional product photography clarity**.`; 
           break;
@@ -811,7 +865,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
 **Scene Details:**
 1. **The Model:** The miniature figure must be **highly detailed, sharp, and exactly match the pose from the input photo**.
 2. **The Base:** A clean, simple display base.
-3. **The Packaging:** Behind the model, show a collector’s style box featuring the subject.
+3. **The Packaging:** Behind the model, show a collector's style box featuring the subject.
 4. **Environment:** A professional, well-lit indoor studio setting, **sharp focus, no blur, no noise**.`;
           break;
         case 'cosplay': 
@@ -1230,6 +1284,9 @@ The result must be **sharp, crystal-clear, and professional product photography 
               <span className={`px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm ${guestLimits.image > 0 ? 'border-indigo-500/30 text-indigo-400' : 'border-rose-500/30 text-rose-500'}`}>
                 免费生图：{guestLimits.image}
               </span>
+              <span className={`px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm ${gptImage2Remaining > 0 ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-500'}`}>
+                GPT-Image-2：{gptImage2Remaining}/50
+              </span>
               <span className="px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm border-amber-500/30 text-amber-300">
                 文生视频：登录后可用
               </span>
@@ -1529,56 +1586,54 @@ The result must be **sharp, crystal-clear, and professional product photography 
               )}
             </div>
             
-            {/* Prompt Results (Moved here) */}
-            {result && !isImg2ImgMode && !isTxt2VideoMode && (
-              <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col gap-5 animate-in fade-in slide-in-from-top-4">
-                <h3 className="text-xs font-mono text-zinc-400 tracking-widest uppercase flex items-center gap-2 border-b border-white/5 pb-4">
-                  <Wand2 className="w-3.5 h-3.5" /> 生成结果 / Result
-                </h3>
-                
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-                    <span className="text-indigo-400 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div> 正向提示词</span>
-                    <button onClick={() => copyToClipboard(result.prompt, "prompt")} className="hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
-                      {copied === "prompt" ? "已复制 ✓" : "复制 / Copy"}
-                    </button>
-                  </div>
-                  <textarea
-                    value={result.prompt}
-                    onChange={(e) => setResult({ ...result, prompt: e.target.value })}
-                    className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-indigo-100/90 h-32 resize-none focus:outline-none focus:border-indigo-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
-                  />
+            {/* Prompt Results - Always visible */}
+            <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col gap-5 animate-in fade-in slide-in-from-top-4">
+              <h3 className="text-xs font-mono text-zinc-400 tracking-widest uppercase flex items-center gap-2 border-b border-white/5 pb-4">
+                <Wand2 className="w-3.5 h-3.5" /> 生成结果 / Result
+              </h3>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                  <span className="text-indigo-400 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div> 正向提示词</span>
+                  <button onClick={() => copyToClipboard(result.prompt, "prompt")} className="hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
+                    {copied === "prompt" ? "已复制 ✓" : "复制 / Copy"}
+                  </button>
                 </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-                    <span className="text-rose-400 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-rose-400"></div> 负向提示词</span>
-                    <button onClick={() => copyToClipboard(result.negative_prompt, "negative")} className="hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
-                      {copied === "negative" ? "已复制 ✓" : "复制 / Copy"}
-                    </button>
-                  </div>
-                  <textarea
-                    value={result.negative_prompt}
-                    onChange={(e) => setResult({ ...result, negative_prompt: e.target.value })}
-                    className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-rose-100/70 h-24 resize-none focus:outline-none focus:border-rose-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
-                  />
-                </div>
-
-                {result.recommended_settings && (
-                  <div className="pt-2">
-                    <label className="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mb-3 block">推荐参数 / Params</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {Object.entries(result.recommended_settings).slice(0, 4).map(([key, value]) => (
-                        <div key={key} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors">
-                          <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-1">{key.replace('_', ' ')}</span>
-                          <span className="text-xs font-bold text-zinc-300 truncate w-full" title={String(value)}>{String(value)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <textarea
+                  value={result.prompt}
+                  onChange={(e) => setResult({ ...result, prompt: e.target.value })}
+                  className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-indigo-100/90 h-32 resize-none focus:outline-none focus:border-indigo-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
+                />
               </div>
-            )}
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                  <span className="text-rose-400 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-rose-400"></div> 负向提示词</span>
+                  <button onClick={() => copyToClipboard(result.negative_prompt, "negative")} className="hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
+                    {copied === "negative" ? "已复制 ✓" : "复制 / Copy"}
+                  </button>
+                </div>
+                <textarea
+                  value={result.negative_prompt}
+                  onChange={(e) => setResult({ ...result, negative_prompt: e.target.value })}
+                  className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-rose-100/70 h-24 resize-none focus:outline-none focus:border-rose-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
+                />
+              </div>
+
+              {result.recommended_settings && (
+                <div className="pt-2">
+                  <label className="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mb-3 block">推荐参数 / Params</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {Object.entries(result.recommended_settings).slice(0, 4).map(([key, value]) => (
+                      <div key={key} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors">
+                        <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-1">{key.replace('_', ' ')}</span>
+                        <span className="text-xs font-bold text-zinc-300 truncate w-full" title={String(value)}>{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Error Message */}
             {error && (
@@ -1610,16 +1665,46 @@ The result must be **sharp, crystal-clear, and professional product photography 
                 </div>
               )}
 
+              {/* GPT-Image-2 Model Toggle */}
+              {!isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && (
+                <div className="mb-4 shrink-0">
+                  <button
+                    onClick={() => {
+                      setIsGptImage2Mode(!isGptImage2Mode);
+                      setError("");
+                    }}
+                    className={`w-full py-3 rounded-2xl font-bold text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${isGptImage2Mode ? "bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-400 hover:text-white"}`}
+                  >
+                    {isGptImage2Mode ? (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        GPT-Image-2 已启用 · 今日剩余 {gptImage2Remaining} 次
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-4 h-4" />
+                        切换到 GPT-Image-2（每天限额 50 次）
+                      </>
+                    )}
+                  </button>
+                  {isGptImage2Mode && (
+                    <p className="text-[10px] text-center text-amber-400/80 mt-2 font-mono">
+                      ⚠️ 此模型响应较慢，请耐心等待（最长 3 分钟）
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Generate Image Button */}
               {!isVideoMode && !isTxt2VideoMode && result && !isImg2ImgMode && (
                 <div className="mb-4 shrink-0">
                   <button 
                     onClick={() => handleGenerateImage(result.prompt)}
                     disabled={imageLoading}
-                    className={`w-full py-4 rounded-2xl font-black text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${imageLoading ? "bg-indigo-500/20 text-indigo-400/50 cursor-wait border border-indigo-500/30" : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-[0_0_30px_rgba(99,102,241,0.3)] hover:shadow-[0_0_40px_rgba(99,102,241,0.5)] hover:scale-[0.98]"}`}
+                    className={`w-full py-4 rounded-2xl font-black text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${imageLoading ? "bg-indigo-500/20 text-indigo-400/50 cursor-wait border border-indigo-500/30" : isGptImage2Mode ? "bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] hover:scale-[0.98]" : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-[0_0_30px_rgba(99,102,241,0.3)] hover:shadow-[0_0_40px_rgba(99,102,241,0.5)] hover:scale-[0.98]"}`}
                   >
                     {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
-                    {imageLoading ? "图片生成中..." : "一键生成画面"}
+                    {imageLoading ? (isGptImage2Mode ? "GPT-Image-2 生成中..." : "图片生成中...") : (isGptImage2Mode ? "使用 GPT-Image-2 生成" : "一键生成画面")}
                   </button>
                 </div>
               )}

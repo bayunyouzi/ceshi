@@ -92,6 +92,11 @@ const isImagesGenerationEndpoint = (endpoint: string) => {
   }
 };
 
+const isGptImage2Model = (model: string | undefined) => {
+  if (!model) return false;
+  return /gpt-image-2/i.test(model);
+};
+
 const isGrokImagineModel = (model: string | undefined) => {
   if (!model) return false;
   return /^grok-imagine-(?:image(?:-lite|-edit|-pro)?|video)$/i.test(model);
@@ -373,13 +378,18 @@ export async function POST(req: Request) {
     const defaultModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (isImg2Img ? DEFAULT_IMG2IMG_MODEL_NAME : DEFAULT_TXT2IMG_MODEL_NAME);
 
     let finalApiKey = isVideo ? defaultApiKey : (apiKey || defaultApiKey);
+    // GPT-Image-2 使用 /v1/chat/completions 格式，不使用 /v1/images/generations
+    const isGpt2Model = modelName && isGptImage2Model(modelName);
     const finalEndpoint = isVideo
       ? defaultEndpoint
-      : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image");
+      : (isGpt2Model 
+         ? (apiEndpoint?.endsWith('/v1') ? `${apiEndpoint}/chat/completions` : apiEndpoint || defaultEndpoint)
+         : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image"));
     const finalModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (modelName || defaultModel);
     // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
     const actualModel = isImg2Img && !modelName ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
-    const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint);
+    // GPT-Image-2 使用 chat/completions 格式
+    const useImagesGenerationApi = !isVideo && !isGpt2Model && isImagesGenerationEndpoint(finalEndpoint);
     const canAutoSwitchImageKey = !apiKey && !isVideo && useImagesGenerationApi;
     if (canAutoSwitchImageKey) {
       const { start, end } = getChinaDayRange();
@@ -452,9 +462,12 @@ export async function POST(req: Request) {
 
     // 构建请求，增加超时控制
     // 优化：根据不同场景设置不同超时时间
+    // GPT-Image-2 模型响应较慢，增加超时到 180 秒
+    const isGptImage2Model = modelName && /gpt-image-2/i.test(modelName);
     const getTimeout = (isVideo: boolean, isImg2Img: boolean) => {
       if (isVideo) return VIDEO_MAX_WAIT_MS;
       if (isImg2Img) return 60000; // 图生图：60秒
+      if (isGptImage2Model) return 180000; // GPT-Image-2：180秒（3分钟）
       return 45000; // 文生图：45秒
     };
     const controller = new AbortController();
