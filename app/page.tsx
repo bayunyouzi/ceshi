@@ -202,19 +202,12 @@ export default function Home() {
     } catch {}
   };
 
-  // GPT-Image-2 模型切换
+  // GPT-Image-2 模型切换（不修改用户设置，仅在请求时内部覆盖参数）
   const toggleGptImage2Mode = () => {
     const newState = !isGptImage2Mode;
     setIsGptImage2Mode(newState);
     const scope = getSettingScope();
     localStorage.setItem(`gpt_image2_mode_${scope}`, String(newState));
-    if (newState) {
-      setImageApiEndpoint("https://gpt2.zeabur.app/v1");
-      setImageModelName("gpt-image-2");
-    } else {
-      setImageApiEndpoint("");
-      setImageModelName("");
-    }
   };
 
   const getChinaDateKey = () =>
@@ -270,8 +263,6 @@ export default function Home() {
     const savedGptImage2 = readSetting(scope, "gpt_image2_mode") === "true";
     if (savedGptImage2) {
       setIsGptImage2Mode(true);
-      setImageApiEndpoint("https://gpt2.zeabur.app/v1");
-      setImageModelName("gpt-image-2");
     }
 
     // 优先从本地缓存恢复用户状态（避免闪烁）
@@ -784,9 +775,10 @@ Example Output:
           prompt,
           aspectRatio: imageAspectRatio,
           // 将自定义配置传给后端 (使用图片生成专用的配置)
-          apiKey: imageApiKey || undefined,
-          apiEndpoint: imageApiEndpoint || undefined,
-          modelName: imageModelName || undefined
+          // GPT-Image-2 模式下覆盖为内置配置，不修改用户设置
+          apiKey: isGptImage2Mode ? "f5f8dc3f65454077b2fd6560" : (imageApiKey || undefined),
+          apiEndpoint: isGptImage2Mode ? "https://gpt2.zeabur.app/v1" : (imageApiEndpoint || undefined),
+          modelName: isGptImage2Mode ? "gpt-image-2" : (imageModelName || undefined)
         }),
         signal: controller.signal
       });
@@ -937,7 +929,7 @@ Example Output:
     setImageMeta(null);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 优化：图生图超时改为60秒
+    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 60000); // GPT-Image-2: 310秒，其他: 60秒
 
     try {
       let promptInstruction = "";
@@ -1052,9 +1044,9 @@ The result must be **sharp, crystal-clear, and professional product photography 
           prompt: promptInstruction,
           image_url: uploadedImage,
           aspectRatio: imageAspectRatio,
-          apiKey: imageApiKey || undefined,
-          apiEndpoint: imageApiEndpoint || undefined,
-          modelName: imageModelName || undefined
+          apiKey: isGptImage2Mode ? "f5f8dc3f65454077b2fd6560" : (imageApiKey || undefined),
+          apiEndpoint: isGptImage2Mode ? "https://gpt2.zeabur.app/v1" : (imageApiEndpoint || undefined),
+          modelName: isGptImage2Mode ? "gpt-image-2" : (imageModelName || undefined)
         }),
         signal: controller.signal
       });
@@ -1080,7 +1072,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
         const retryPrompt = `Generate one image only. Keep character identity strictly consistent with the reference image: same face, hairstyle, outfit, body proportions, pose and camera framing. Do not drift style away from reference. Use this recovered guidance as secondary hint: ${content}. Original transformation request: ${promptInstruction}`;
         const img2imgRetryKey = buildImageIdempotencyKey(retryPrompt, { kind: "img2img", imageSeed, phase: "retry" });
         const retryController = new AbortController();
-        const retryTimeoutId = setTimeout(() => retryController.abort(), 90000);
+        const retryTimeoutId = setTimeout(() => retryController.abort(), isGptImage2Mode ? 310000 : 90000);
 
         const retryToken = localStorage.getItem("auth_token");
         const retryResponse = await fetch("/api/generate-image", {
@@ -1094,9 +1086,9 @@ The result must be **sharp, crystal-clear, and professional product photography 
             prompt: retryPrompt,
             image_url: uploadedImage,
             aspectRatio: imageAspectRatio,
-            apiKey: imageApiKey || undefined,
-            apiEndpoint: imageApiEndpoint || undefined,
-            modelName: imageModelName || undefined
+            apiKey: isGptImage2Mode ? "f5f8dc3f65454077b2fd6560" : (imageApiKey || undefined),
+            apiEndpoint: isGptImage2Mode ? "https://gpt2.zeabur.app/v1" : (imageApiEndpoint || undefined),
+            modelName: isGptImage2Mode ? "gpt-image-2" : (imageModelName || undefined)
           }),
           signal: retryController.signal
         });
@@ -1565,14 +1557,14 @@ The result must be **sharp, crystal-clear, and professional product photography 
                   {isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,1)]" />}
                 </button>
                 <button
-                  onClick={() => { setIsTxt2VideoMode(true); setIsVideoMode(false); setIsImg2ImgMode(false); if (isGptImage2Mode) { setIsGptImage2Mode(false); setImageApiEndpoint(""); setImageModelName(""); } }}
+                  onClick={() => { setIsTxt2VideoMode(true); setIsVideoMode(false); setIsImg2ImgMode(false); if (isGptImage2Mode) { setIsGptImage2Mode(false); } }}
                   className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isTxt2VideoMode ? 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><Video className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">文生视频</span></div>
                   {isTxt2VideoMode && <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,1)]" />}
                 </button>
                 <button
-                  onClick={() => { setIsImg2ImgMode(true); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsAnime(false); if (isGptImage2Mode) { setIsGptImage2Mode(false); setImageApiEndpoint(""); setImageModelName(""); } }}
+                  onClick={() => { setIsImg2ImgMode(true); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsAnime(false); }}
                   className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isImg2ImgMode ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><ImageIcon className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">AI 图生图</span></div>
@@ -1641,16 +1633,16 @@ The result must be **sharp, crystal-clear, and professional product photography 
                   </button>
                   <button
                     onClick={toggleGptImage2Mode}
-                    disabled={isVideoMode || isTxt2VideoMode || isImg2ImgMode}
-                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode || isImg2ImgMode) ? "bg-white/5 border-white/10 text-zinc-600 cursor-not-allowed" : "bg-white/5 border-white/10 text-zinc-500 hover:bg-white/10 hover:text-amber-300 hover:border-amber-500/30"}`}
+                    disabled={isVideoMode || isTxt2VideoMode}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode) ? "bg-white/5 border-white/10 text-zinc-600 cursor-not-allowed" : "bg-white/5 border-white/10 text-zinc-500 hover:bg-white/10 hover:text-amber-300 hover:border-amber-500/30"}`}
                   >
                     <ImageIcon className="w-4 h-4" />
-                    {isGptImage2Mode ? "GPT-Image-2: 已切换" : "GPT-Image-2: 点击切换"}
+                    {isGptImage2Mode ? (isImg2ImgMode ? "GPT-Image-2 图生图: 已开启" : "GPT-Image-2 文生图: 已开启") : "GPT-Image-2: 点击切换"}
                   </button>
                   {isGptImage2Mode && (
                     <div className="border rounded-xl p-2.5 bg-amber-500/10 border-amber-500/20">
                       <p className="text-[10px] text-center leading-relaxed font-mono text-amber-400/90 font-bold">
-                        GPT-Image-2 模型每日仅限50次，先到先得。生成速度较慢，请耐心等待。
+                        GPT-Image-2 模型每日仅限50次，先到先得。生成速度较慢，请耐心等待。{isImg2ImgMode ? "当前为图生图模式。" : ""}
                       </p>
                     </div>
                   )}

@@ -378,18 +378,17 @@ export async function POST(req: Request) {
     const defaultModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (isImg2Img ? DEFAULT_IMG2IMG_MODEL_NAME : DEFAULT_TXT2IMG_MODEL_NAME);
 
     let finalApiKey = isVideo ? defaultApiKey : (apiKey || defaultApiKey);
-    // GPT-Image-2 使用 /v1/chat/completions 格式，不使用 /v1/images/generations
+    // GPT-Image-2 使用标准的 /v1/images/generations 端点格式
     const isGpt2Model = modelName && isGptImage2Model(modelName);
     const finalEndpoint = isVideo
       ? defaultEndpoint
-      : (isGpt2Model 
-         ? (apiEndpoint?.endsWith('/v1') ? `${apiEndpoint}/chat/completions` : apiEndpoint || defaultEndpoint)
-         : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image"));
+      : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image");
     const finalModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (modelName || defaultModel);
     // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
-    const actualModel = isImg2Img && !modelName ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
-    // GPT-Image-2 使用 chat/completions 格式
-    const useImagesGenerationApi = !isVideo && !isGpt2Model && isImagesGenerationEndpoint(finalEndpoint);
+    // 但 GPT-Image-2 模式下不做强制替换（该模型支持文生图和图生图）
+    const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
+    // GPT-Image-2 也使用 images/generations API 格式
+    const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint);
     const canAutoSwitchImageKey = !apiKey && !isVideo && useImagesGenerationApi;
     if (canAutoSwitchImageKey) {
       const { start, end } = getChinaDayRange();
@@ -466,8 +465,8 @@ export async function POST(req: Request) {
     const isGptImage2Model = modelName && /gpt-image-2/i.test(modelName);
     const getTimeout = (isVideo: boolean, isImg2Img: boolean) => {
       if (isVideo) return VIDEO_MAX_WAIT_MS;
+      if (isGptImage2Model) return 300000; // GPT-Image-2：300秒（5分钟），模型响应较慢，文生图和图生图都适用
       if (isImg2Img) return 60000; // 图生图：60秒
-      if (isGptImage2Model) return 300000; // GPT-Image-2：300秒（5分钟），模型响应较慢
       return 45000; // 文生图：45秒
     };
     const controller = new AbortController();
@@ -1180,12 +1179,17 @@ export async function POST(req: Request) {
         return respond({ error: "未识别到图片结果，请稍后重试或更换提示词。" }, 502);
       }
 
+      // 修复 gpt2.zeabur.app 返回 http:// URL 的问题，替换为 https://
+      if (mediaUrl && typeof mediaUrl === 'string' && mediaUrl.startsWith('http://gpt2.zeabur.app/')) {
+        mediaUrl = mediaUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+      }
+
       return respond(buildImageClientPayload(finalData, mediaUrl!, actualModel, activeModel), 200);
 
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        return respond({ error: isVideo ? "视频生成超时，请稍后重试" : "API Request Timeout (90s)" }, 504);
+        return respond({ error: isVideo ? "视频生成超时，请稍后重试" : (isGptImage2Model ? "GPT-Image-2 请求超时，模型响应较慢，请耐心等待或稍后重试" : "API 请求超时，请稍后重试") }, 504);
       }
       throw fetchError;
     }
