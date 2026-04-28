@@ -54,14 +54,20 @@ const cleanupExpiredIdempotency = () => {
   }
 };
 
-const normalizeEndpoint = (raw: string | undefined, fallback: string, routeKind: "image" | "video") => {
+const normalizeEndpoint = (raw: string | undefined, fallback: string, routeKind: "image" | "video", isImg2Img?: boolean) => {
   if (!raw || typeof raw !== "string") return fallback;
   const trimmed = raw.trim();
   if (!trimmed) return fallback;
   try {
     const url = new URL(trimmed);
     const pathname = url.pathname.replace(/\/+$/, "");
-    if (url.pathname === "/" || url.pathname === "" || pathname === "/v1") {
+    // For img2img, always use images/generations regardless of the current path
+    if (isImg2Img) {
+      url.pathname = "/v1/images/generations";
+    } else if (pathname === "/v1/chat/completions") {
+      // Redirect chat completions to images/generations
+      url.pathname = routeKind === "video" ? "/v1/videos/generations" : "/v1/images/generations";
+    } else if (pathname === "/v1" || pathname === "") {
       url.pathname = routeKind === "video" ? "/v1/videos/generations" : "/v1/images/generations";
     }
     return url.toString();
@@ -369,7 +375,7 @@ export async function POST(req: Request) {
     const isGpt2Model = modelName && isGptImage2Model(modelName);
     const finalEndpoint = isVideo
       ? defaultEndpoint
-      : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image");
+      : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img);
     const finalModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (modelName || defaultModel);
     // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
     // 但 GPT-Image-2 模式下不做强制替换（该模型支持文生图和图生图）
