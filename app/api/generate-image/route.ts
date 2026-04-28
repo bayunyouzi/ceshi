@@ -462,12 +462,12 @@ export async function POST(req: Request) {
 
     // 构建请求，增加超时控制
     // 优化：根据不同场景设置不同超时时间
-    // GPT-Image-2 模型响应较慢，增加超时到 180 秒
+    // GPT-Image-2 模型响应较慢，增加超时到 300 秒（5分钟）
     const isGptImage2Model = modelName && /gpt-image-2/i.test(modelName);
     const getTimeout = (isVideo: boolean, isImg2Img: boolean) => {
       if (isVideo) return VIDEO_MAX_WAIT_MS;
       if (isImg2Img) return 60000; // 图生图：60秒
-      if (isGptImage2Model) return 180000; // GPT-Image-2：180秒（3分钟）
+      if (isGptImage2Model) return 300000; // GPT-Image-2：300秒（5分钟），模型响应较慢
       return 45000; // 文生图：45秒
     };
     const controller = new AbortController();

@@ -28,7 +28,7 @@ export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "", recommended_settings: null });
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -36,6 +36,7 @@ export default function Home() {
   const [isVideoMode, setIsVideoMode] = useState(false);
   const [isTxt2VideoMode, setIsTxt2VideoMode] = useState(false);
   const [isImg2ImgMode, setIsImg2ImgMode] = useState(false); // 新增图生图模式
+  const [isGptImage2Mode, setIsGptImage2Mode] = useState(false); // GPT-Image-2 模型切换
   const [uploadedImage, setUploadedImage] = useState<string | null>(null); // 上传图片
   const [img2ImgEffect, setImg2ImgEffect] = useState('random'); // 图生图效果
   const [img2ImgInput, setImg2ImgInput] = useState(""); // 图生图手动需求
@@ -201,6 +202,21 @@ export default function Home() {
     } catch {}
   };
 
+  // GPT-Image-2 模型切换
+  const toggleGptImage2Mode = () => {
+    const newState = !isGptImage2Mode;
+    setIsGptImage2Mode(newState);
+    const scope = getSettingScope();
+    localStorage.setItem(`gpt_image2_mode_${scope}`, String(newState));
+    if (newState) {
+      setImageApiEndpoint("https://gpt2.zeabur.app/v1");
+      setImageModelName("gpt-image-2");
+    } else {
+      setImageApiEndpoint("");
+      setImageModelName("");
+    }
+  };
+
   const getChinaDateKey = () =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Shanghai",
@@ -248,6 +264,14 @@ export default function Home() {
     }
     if (aspectRatioOptions.includes(savedAspectRatio as any)) {
       setImageAspectRatio(savedAspectRatio as any);
+    }
+
+    // 加载 GPT-Image-2 模式
+    const savedGptImage2 = readSetting(scope, "gpt_image2_mode") === "true";
+    if (savedGptImage2) {
+      setIsGptImage2Mode(true);
+      setImageApiEndpoint("https://gpt2.zeabur.app/v1");
+      setImageModelName("gpt-image-2");
     }
 
     // 优先从本地缓存恢复用户状态（避免闪烁）
@@ -745,7 +769,7 @@ Example Output:
     setImageMeta(null);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 110000);
+    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 110000);
     
     try {
       const token = localStorage.getItem("auth_token");
@@ -1541,14 +1565,14 @@ The result must be **sharp, crystal-clear, and professional product photography 
                   {isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,1)]" />}
                 </button>
                 <button
-                  onClick={() => { setIsTxt2VideoMode(true); setIsVideoMode(false); setIsImg2ImgMode(false); }}
+                  onClick={() => { setIsTxt2VideoMode(true); setIsVideoMode(false); setIsImg2ImgMode(false); if (isGptImage2Mode) { setIsGptImage2Mode(false); setImageApiEndpoint(""); setImageModelName(""); } }}
                   className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isTxt2VideoMode ? 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><Video className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">文生视频</span></div>
                   {isTxt2VideoMode && <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,1)]" />}
                 </button>
                 <button
-                  onClick={() => { setIsImg2ImgMode(true); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsAnime(false); }}
+                  onClick={() => { setIsImg2ImgMode(true); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsAnime(false); if (isGptImage2Mode) { setIsGptImage2Mode(false); setImageApiEndpoint(""); setImageModelName(""); } }}
                   className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isImg2ImgMode ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><ImageIcon className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">AI 图生图</span></div>
@@ -1615,6 +1639,21 @@ The result must be **sharp, crystal-clear, and professional product photography 
                     <Brain className="w-4 h-4" />
                     {isVideoMode ? "视频提示词: 固定 grok-3" : (isTxt2VideoMode ? "文生视频: 不适用" : (isDeepThinking ? "深度思考: 开启" : "深度思考: 关闭"))}
                   </button>
+                  <button
+                    onClick={toggleGptImage2Mode}
+                    disabled={isVideoMode || isTxt2VideoMode || isImg2ImgMode}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode || isImg2ImgMode) ? "bg-white/5 border-white/10 text-zinc-600 cursor-not-allowed" : "bg-white/5 border-white/10 text-zinc-500 hover:bg-white/10 hover:text-amber-300 hover:border-amber-500/30"}`}
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    {isGptImage2Mode ? "GPT-Image-2: 已切换" : "GPT-Image-2: 点击切换"}
+                  </button>
+                  {isGptImage2Mode && (
+                    <div className="border rounded-xl p-2.5 bg-amber-500/10 border-amber-500/20">
+                      <p className="text-[10px] text-center leading-relaxed font-mono text-amber-400/90 font-bold">
+                        GPT-Image-2 模型每日仅限50次，先到先得。生成速度较慢，请耐心等待。
+                      </p>
+                    </div>
+                  )}
                 </div>
                 
                 {!isSafeMode && isUncensoredMode && (
@@ -1750,7 +1789,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
             </div>
             
             {/* Prompt Results (Moved here) */}
-            {result && !isImg2ImgMode && !isTxt2VideoMode && (
+            {!isImg2ImgMode && !isTxt2VideoMode && (
               <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col gap-5 animate-in fade-in slide-in-from-top-4">
                 <h3 className="text-xs font-mono text-zinc-400 tracking-widest uppercase flex items-center gap-2 border-b border-white/5 pb-4">
                   <Wand2 className="w-3.5 h-3.5" /> 生成结果 / Result
@@ -1766,6 +1805,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
                   <textarea
                     value={result.prompt}
                     onChange={(e) => setResult({ ...result, prompt: e.target.value })}
+                    placeholder="点击「生成提示词」自动生成，或直接在此输入提示词..."
                     className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-indigo-100/90 h-32 resize-none focus:outline-none focus:border-indigo-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
                   />
                 </div>
@@ -1780,6 +1820,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
                   <textarea
                     value={result.negative_prompt}
                     onChange={(e) => setResult({ ...result, negative_prompt: e.target.value })}
+                    placeholder="lowres, bad anatomy, bad hands, text, error, missing fingers..."
                     className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-rose-100/70 h-24 resize-none focus:outline-none focus:border-rose-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
                   />
                 </div>
@@ -1831,7 +1872,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
               )}
 
               {/* Generate Image Button */}
-              {!isVideoMode && !isTxt2VideoMode && result && !isImg2ImgMode && (
+              {!isVideoMode && !isTxt2VideoMode && result?.prompt && !isImg2ImgMode && (
                 <div className="mb-4 shrink-0">
                   <div className="mb-3">
                     <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">

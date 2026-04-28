@@ -141,6 +141,7 @@ const ALLOWED_IMAGE_MODELS = [
   'grok-imagine-image-edit',
   'grok-imagine-image-pro',
   'grok-imagine-video',
+  'gpt-image-2',
 ];
 
 const ALLOWED_PROMPT_MODELS = [
