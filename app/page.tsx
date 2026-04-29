@@ -190,12 +190,20 @@ export default function Home() {
     } catch {}
   };
 
-  // GPT-Image-2 模型切换（不修改用户设置，仅在请求时内部覆盖参数）
+  // GPT-Image-2 模型切换
   const toggleGptImage2Mode = () => {
     const newState = !isGptImage2Mode;
     setIsGptImage2Mode(newState);
     const scope = getSettingScope();
     localStorage.setItem(`gpt_image2_mode_${scope}`, String(newState));
+    if (!newState) {
+      setImageApiKey("");
+      setImageApiEndpoint("");
+      setImageModelName("");
+      localStorage.removeItem(`image_gen_api_key_${scope}`);
+      localStorage.removeItem(`image_gen_api_endpoint_${scope}`);
+      localStorage.removeItem(`image_gen_model_name_${scope}`);
+    }
   };
 
   const getChinaDateKey = () =>
@@ -223,15 +231,22 @@ export default function Home() {
     setApiEndpoint(savedEndpoint || "");
     setModelName(savedModel || "");
 
-    // 加载图片生成配置
+    // 加载 GPT-Image-2 模式标志
+    const savedGptImage2Mode = localStorage.getItem(`gpt_image2_mode_${scope}`);
+    const isGptMode = savedGptImage2Mode === 'true';
+    if (isGptMode) {
+      setIsGptImage2Mode(true);
+    }
+
+    // 加载图片生成配置（仅在 GPT 模式开启时加载，避免残留凭证干扰 Grok）
     const savedImageKey = readSetting(scope, "image_gen_api_key");
     const savedImageEndpoint = readSetting(scope, "image_gen_api_endpoint");
     const savedImageModel = readSetting(scope, "image_gen_model_name");
     const savedAspectRatio = readSetting(scope, "image_aspect_ratio");
 
-    if (savedImageKey) setImageApiKey(savedImageKey);
-    if (savedImageEndpoint) setImageApiEndpoint(savedImageEndpoint);
-    if (savedImageModel) {
+    if (isGptMode && savedImageKey) setImageApiKey(savedImageKey);
+    if (isGptMode && savedImageEndpoint) setImageApiEndpoint(savedImageEndpoint);
+    if (isGptMode && savedImageModel) {
       const normalizedImageModel =
         ["gemini-2.5-flash-image", "grok-4.1-image"].includes(savedImageModel)
           ? "grok-imagine-1.0"
@@ -242,15 +257,13 @@ export default function Home() {
       if (normalizedImageModel !== savedImageModel) {
         localStorage.setItem(`image_gen_model_name_${scope}`, normalizedImageModel);
       }
+    } else if (!isGptMode) {
+      localStorage.removeItem(`image_gen_api_key_${scope}`);
+      localStorage.removeItem(`image_gen_api_endpoint_${scope}`);
+      localStorage.removeItem(`image_gen_model_name_${scope}`);
     }
     if (aspectRatioOptions.includes(savedAspectRatio as any)) {
       setImageAspectRatio(savedAspectRatio as any);
-    }
-
-    // 加载 GPT-Image-2 模式（从 localStorage 恢复用户设置）
-    const savedGptImage2Mode = localStorage.getItem(`gpt_image2_mode_${scope}`);
-    if (savedGptImage2Mode === 'true') {
-      setIsGptImage2Mode(true);
     }
 
     // 优先从本地缓存恢复用户状态（避免闪烁）
@@ -834,7 +847,7 @@ Example Output:
         return;
       }
       
-      // 无自定义配置：走后端默认
+      // 无自定义配置：走后端默认 Grok
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
@@ -845,8 +858,6 @@ Example Output:
         body: JSON.stringify({ 
           prompt,
           aspectRatio: imageAspectRatio,
-          // 将自定义配置传给后端 (使用图片生成专用的配置)
-          // GPT-Image-2 模式下覆盖为内置配置，不修改用户设置
           apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
           apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
           modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
@@ -1129,7 +1140,7 @@ Example Output:
         return;
       }
       
-      // 无自定义配置：走后端默认
+      // 无自定义配置：走后端默认 Grok
       const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
 
       const response = await fetch("/api/generate-image", {
