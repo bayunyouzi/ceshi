@@ -1051,83 +1051,87 @@ Example Output:
         if (!apiKey) {
           throw new Error("请先配置 API Key");
         }
-        
+
         console.log('[前端直调 图生图] 模式:', isGptImage2Mode ? 'GPT-Image-2' : '用户自定义');
-        
-        // 将 base64 转换为 Blob
-        const base64Data = uploadedImage.split(',')[1];
-        const mimeMatch = uploadedImage.match(/data:([^;]+);/);
-        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-        
-        // Base64 解码为二进制
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: mimeType });
-        const file = new File([blob], 'image.png', { type: mimeType });
-        
-        // 使用 FormData 格式（multipart/form-data）
-        const formData = new FormData();
-        formData.append('model', model);
-        formData.append('prompt', promptInstruction);
-        formData.append('n', '1');
-        formData.append('image', file);
-        
-        console.log('[前端直调 图生图] FormData:', {
-          model: model,
-          prompt: promptInstruction,
-          n: 1,
-          image: `[File: ${file.size} bytes, ${mimeType}]`
-        });
-        
-        // 确定请求端点
+
         let requestUrl = apiEndpoint;
-        if (!apiEndpoint.includes('/images/edits') && !apiEndpoint.includes('/images/generations')) {
+        if (!apiEndpoint.includes('/chat/completions')) {
           if (apiEndpoint.endsWith('/v1')) {
-            requestUrl = `${apiEndpoint}/images/edits`;
+            requestUrl = `${apiEndpoint}/chat/completions`;
           } else if (!apiEndpoint.includes('/v1')) {
-            requestUrl = `${apiEndpoint}/v1/images/edits`;
+            requestUrl = `${apiEndpoint}/v1/chat/completions`;
           }
-        } else if (apiEndpoint.includes('/images/generations')) {
-          // 如果是 generations 端点，改为 edits
-          requestUrl = apiEndpoint.replace('/images/generations', '/images/edits');
         }
-        
+
         console.log('[前端直调 图生图] 请求URL:', requestUrl);
-        
+
         const apiResponse = await fetch(requestUrl, {
           method: "POST",
           headers: {
+            "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`
           },
-          body: formData,
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: promptInstruction
+                  },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: uploadedImage
+                    }
+                  }
+                ]
+              }
+            ],
+            stream: false,
+            max_tokens: 4096
+          }),
           signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (!apiResponse.ok) {
           const errText = await apiResponse.text();
           throw new Error(`API 错误 (${apiResponse.status}): ${errText.substring(0, 200)}`);
         }
-        
+
         const apiData = await apiResponse.json();
         console.log('[前端直调 图生图] Response:', apiData);
-        
-        let imageUrl = apiData?.data?.[0]?.url || apiData?.data?.[0]?.b64_json;
-        
-        if (!imageUrl) {
-          throw new Error("API 未返回图片");
+
+        let imageUrl: string | null = null;
+        const content = apiData?.choices?.[0]?.message?.content;
+
+        if (content) {
+          const urlMatch = content.match(/https?:\/\/[^\s\)"'<]+/);
+          if (urlMatch) {
+            imageUrl = urlMatch[0];
+          }
+          const b64Match = content.match(/data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+/);
+          if (b64Match) {
+            imageUrl = b64Match[0];
+          }
         }
-        
-        // 如果是 base64，直接使用；如果是 http，转为 https
+
+        if (!imageUrl) {
+          imageUrl = apiData?.data?.[0]?.url || apiData?.data?.[0]?.b64_json;
+        }
+
+        if (!imageUrl) {
+          throw new Error("API 未返回图片，仅返回了文本: " + (content || "").substring(0, 100));
+        }
+
         if (!imageUrl.startsWith('data:') && imageUrl.startsWith('http://')) {
           imageUrl = imageUrl.replace('http://', 'https://');
         }
-        
+
         console.log('[前端直调 图生图] 图片:', imageUrl.substring(0, 100));
         setGeneratedImage(imageUrl);
         setImageMeta({
