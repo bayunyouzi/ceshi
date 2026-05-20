@@ -25,7 +25,7 @@ const DEFAULT_IMG2IMG_API_KEY = DEFAULT_GROK2API_KEY;
 const DEFAULT_IMG2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;
 const DEFAULT_IMG2IMG_MODEL_NAME = "grok-imagine-image-edit";
 // GPT-Image-2 默认配置 - 使用独立的 API Key
-const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "f5f8dc3f65454077b2fd6560";
+const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
 const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
 
 const DEFAULT_TXT2VIDEO_API_KEY = process.env.XAI_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
@@ -381,7 +381,8 @@ export async function POST(req: Request) {
     // GPT-Image-2 使用 chat/completions 端点，不需要 images/generations
     const useImagesGenerationApi = !isVideo && !isGpt2Model && isImagesGenerationEndpoint(finalEndpoint);
     // 图生图使用 /images/edits 端点
-    const useImagesEditsApi = !isVideo && isImg2Img && (isGpt2Model || isImagesEditsEndpoint(finalEndpoint));
+    // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
+    const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
     
     // 调试日志：GPT-Image-2 请求参数
     if (isGpt2Model) {
@@ -917,7 +918,7 @@ export async function POST(req: Request) {
           stream: false,
           max_tokens: 4096
         };
-        if (!isVideo && isGrokImagineModel(actualModel)) {
+        if (!isVideo && (isGrokImagineModel(actualModel) || isGpt2Model)) {
           requestPayload.image_config = {
             n: 1,
             size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
@@ -999,12 +1000,14 @@ export async function POST(req: Request) {
       const maxNoImageRetry = !isVideo && !useImagesGenerationApi ? 2 : 0;
       let noImageRetryCount = 0;
       let badGatewayRetryCount = 0;
-      const maxBadGatewayRetry = 3; // Allow up to 3 retries for 502/Bad Gateway errors
+      const maxBadGatewayRetry = 3;
+      let serverErrorRetryCount = 0;
+      const maxServerErrorRetry = isGpt2Model ? 2 : 1;
 
       response = await doRequest(activePayload);
 
       // 重试逻辑
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 8; attempt++) {
         if (attempt > 0 || !response) {
           response = await doRequest(activePayload);
         }
@@ -1015,10 +1018,19 @@ export async function POST(req: Request) {
            if (badGatewayRetryCount < maxBadGatewayRetry) {
              badGatewayRetryCount++;
              lastErrorText = responseText;
-             // Wait 2 seconds before retrying a 502
              await new Promise(resolve => setTimeout(resolve, 2000));
              continue;
            }
+        }
+
+        // Check for 500 Internal Server Error with exponential backoff
+        if (!response.ok && response.status === 500 && serverErrorRetryCount < maxServerErrorRetry) {
+          serverErrorRetryCount++;
+          lastErrorText = responseText;
+          const backoffMs = Math.min(3000 * Math.pow(2, serverErrorRetryCount - 1), 15000);
+          console.warn(`[generate-image] 500 error, retry ${serverErrorRetryCount}/${maxServerErrorRetry} after ${backoffMs}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          continue;
         }
 
         if (response.ok) {
@@ -1130,6 +1142,17 @@ export async function POST(req: Request) {
           continue;
         }
 
+        // GPT-Image-2 429 rate limit: backoff and retry with delay
+        if (!isVideo && isGpt2Model && response.status === 429) {
+          if (!didKeyRetry) {
+            didKeyRetry = true;
+            const backoffMs = 10000;
+            console.warn(`[generate-image] GPT-Image-2 rate limited (429), retrying after ${backoffMs}ms`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+        }
+
         if (aspectSize && !didPayloadRetry && (response.status === 400 || response.status === 422)) {
           const retryPayload: any = { ...activePayload };
           delete retryPayload.size;
@@ -1151,6 +1174,22 @@ export async function POST(req: Request) {
           const errorText = lastErrorText || "";
           const status = response?.status ?? 0;
           console.error('[generate-image] request failed:', status, errorText.substring(0, 200));
+
+          // 提供更友好的错误提示
+          let userMessage = "";
+          if (status === 500) {
+            userMessage = isGpt2Model
+              ? "GPT-Image-2 服务暂时不可用(500)，请稍后重试"
+              : "图片生成服务暂时不可用(500)，请稍后重试";
+          } else if (status === 429) {
+            userMessage = isGpt2Model
+              ? "GPT-Image-2 请求过于频繁，请等待10秒后重试"
+              : "请求过于频繁，请稍后重试";
+          } else {
+            const respError = parseApiError(status, errorText);
+            userMessage = respError.message;
+          }
+
           const respError = parseApiError(status, errorText);
           logErrorAsync(respError, {
             userId: user?.id,
@@ -1159,7 +1198,7 @@ export async function POST(req: Request) {
             endpoint: finalEndpoint,
             requestPrompt: String(finalPrompt).slice(0, 2000)
           });
-          return respond({ error: respError.message }, status || 500);
+          return respond({ error: userMessage }, status || 500);
       }
 
       if (!finalData) {

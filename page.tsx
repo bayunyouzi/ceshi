@@ -64,7 +64,7 @@ export default function Home() {
   // GPT-Image-2 模型配置
   const [isGptImage2Mode, setIsGptImage2Mode] = useState(false);
   const GPTIMAGE2_API_ENDPOINT = "https://gpt2.zeabur.app/v1";
-  const GPTIMAGE2_API_KEY = "f5f8dc3f65454077b2fd6560";
+  const GPTIMAGE2_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
   const GPTIMAGE2_MODEL_NAME = "gpt-image-2";
   const GPTIMAGE2_DAILY_LIMIT = 50;
   const [gptImage2Remaining, setGptImage2Remaining] = useState(GPTIMAGE2_DAILY_LIMIT);
@@ -710,11 +710,14 @@ Example Output:
       
       if (err.name === 'AbortError') {
         errMsg = isGptImage2Mode 
-          ? "⚠️ GPT-Image-2 请求超时：此模型响应较慢，请耐心等待或稍后重试。" 
-          : "⚠️ 请求超时：生图接口响应时间过长，请稍后重试。";
+          ? "GPT-Image-2 请求超时：此模型响应较慢，请耐心等待或稍后重试。" 
+          : "请求超时：生图接口响应时间过长，请稍后重试。";
       } else if (errMsg.includes("PROHIBITED_CONTENT") || errMsg.includes("prompt_blocked") || errMsg.includes("content-moderated") || errMsg.includes("content_moderated") || errMsg.includes("Moderated")) {
-        // 针对 Gemini/Google/Grok 安全拦截的优化提示
-        errMsg = "⚠️ 生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启"安全模式"或修改输入词后再试。";
+        errMsg = "生成失败：您的提示词包含敏感/违规内容，触发了模型的安全审查机制。请尝试开启安全模式或修改输入词后再试。";
+      } else if (errMsg.includes("500") || errMsg.includes("服务暂时不可用")) {
+        errMsg = "图片生成服务暂时不可用，请稍后重试";
+      } else if (errMsg.includes("429") || errMsg.includes("请求过于频繁")) {
+        errMsg = "请求过于频繁，请等待10秒后重试";
       }
       
       setError(errMsg);
@@ -976,9 +979,13 @@ The result must be **sharp, crystal-clear, and professional product photography 
     } catch (err: any) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        setError("⚠️ 请求超时：图像处理时间过长，请稍后重试。");
+        setError("请求超时：图像处理时间过长，请稍后重试。");
       } else if (err.message?.includes('content-moderated')) {
-        setError("⚠️ 生成失败：内容触发了严格的安全审查。请尝试：1. 开启'安全模式'；2. 减少提示词中的敏感部位描述；3. 换一个更保守的模型。");
+        setError("生成失败：内容触发了严格的安全审查。请尝试：1. 开启安全模式；2. 减少提示词中的敏感部位描述；3. 换一个更保守的模型。");
+      } else if (err.message?.includes("500") || err.message?.includes("服务暂时不可用")) {
+        setError("图片生成服务暂时不可用，请稍后重试");
+      } else if (err.message?.includes("429") || err.message?.includes("请求过于频繁")) {
+        setError("请求过于频繁，请等待10秒后重试");
       } else {
         setError(err.message || "生成图片失败，请稍后重试");
       }

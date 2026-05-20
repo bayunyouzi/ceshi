@@ -12,7 +12,7 @@ export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
   // GPT-Image-2 配置 - 使用独立的 API Key
-  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "f5f8dc3f65454077b2fd6560";
+  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
   const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
   const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
   const [loading, setLoading] = useState(false);
@@ -825,6 +825,10 @@ Example Output:
         errMsg.includes("Moderated")
       ) {
         displayMsg = "提示词触发安全审查，请尝试修改内容或开启安全模式";
+      } else if (errMsg.includes("500") || errMsg.includes("服务暂时不可用")) {
+        displayMsg = "图片生成服务暂时不可用，请稍后重试";
+      } else if (errMsg.includes("429") || errMsg.includes("请求过于频繁")) {
+        displayMsg = "请求过于频繁，请等待10秒后重试";
       } else if (
         errMsg.includes("502") ||
         errMsg.includes("Bad Gateway") ||
@@ -1047,6 +1051,10 @@ Example Output:
         setError("请求超时，图像处理时间过长，请稍后重试");
       } else if (msg.includes("content-moderated") || msg.includes("Moderated")) {
         setError("内容触发安全审查，请尝试开启安全模式或修改提示词");
+      } else if (msg.includes("500") || msg.includes("服务暂时不可用")) {
+        setError("图片生成服务暂时不可用，请稍后重试");
+      } else if (msg.includes("429") || msg.includes("请求过于频繁")) {
+        setError("请求过于频繁，请等待10秒后重试");
       } else if (msg.includes("502") || msg.includes("Bad Gateway") || msg.includes("JSON")) {
         setError("上游服务暂时异常，请稍后重试");
       } else {
