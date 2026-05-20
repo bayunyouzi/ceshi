@@ -1,3 +1,68 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --theme-bg: #000000;
+  --theme-bg-card: rgba(255, 255, 255, 0.02);
+  --theme-bg-card-hover: rgba(255, 255, 255, 0.05);
+  --theme-bg-input: rgba(0, 0, 0, 0.4);
+  --theme-bg-input-hover: rgba(0, 0, 0, 0.5);
+  --theme-text-primary: #f4f4f5;
+  --theme-text-secondary: #a1a1aa;
+  --theme-text-muted: #71717a;
+  --theme-text-placeholder: #3f3f46;
+  --theme-border: rgba(255, 255, 255, 0.05);
+  --theme-border-strong: rgba(255, 255, 255, 0.1);
+  --theme-border-accent: rgba(255, 255, 255, 0.1);
+  --theme-overlay: rgba(0, 0, 0, 0.9);
+  --theme-grid-line: rgba(255, 255, 255, 0.02);
+  --theme-glow-indigo: rgba(99, 102, 241, 0.2);
+  --theme-glow-rose: rgba(244, 63, 94, 0.1);
+  --theme-glow-blend: screen;
+  --theme-hero-from: #ffffff;
+  --theme-hero-to: #71717a;
+  --theme-shadow-btn: rgba(255, 255, 255, 0.15);
+  --theme-scroll-thumb: rgba(255, 255, 255, 0.1);
+  --theme-code-bg: rgba(0, 0, 0, 0.4);
+}
+
+html.light {
+  --theme-bg: #ffffff;
+  --theme-bg-card: rgba(0, 0, 0, 0.03);
+  --theme-bg-card-hover: rgba(0, 0, 0, 0.06);
+  --theme-bg-input: rgba(0, 0, 0, 0.04);
+  --theme-bg-input-hover: rgba(0, 0, 0, 0.08);
+  --theme-text-primary: #111111;
+  --theme-text-secondary: #3f3f46;
+  --theme-text-muted: #52525b;
+  --theme-text-placeholder: #71717a;
+  --theme-border: rgba(0, 0, 0, 0.1);
+  --theme-border-strong: rgba(0, 0, 0, 0.2);
+  --theme-border-accent: rgba(0, 0, 0, 0.12);
+  --theme-overlay: rgba(255, 255, 255, 0.95);
+  --theme-grid-line: rgba(0, 0, 0, 0.04);
+  --theme-glow-indigo: rgba(99, 102, 241, 0.08);
+  --theme-glow-rose: rgba(244, 63, 94, 0.05);
+  --theme-glow-blend: multiply;
+  --theme-hero-from: #111111;
+  --theme-hero-to: #52525b;
+  --theme-shadow-btn: rgba(0, 0, 0, 0.1);
+  --theme-scroll-thumb: rgba(0, 0, 0, 0.2);
+  --theme-code-bg: rgba(0, 0, 0, 0.04);
+}
+
+html.light body {
+  background-color: #ffffff;
+  color: #111111;
+}
+
+@layer utilities {
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

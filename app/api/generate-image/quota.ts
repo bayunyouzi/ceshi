@@ -13,7 +13,7 @@ export const isQuotaExhaustedError = (status: number, errorText: string) => {
       parsed?.msg ??
       null;
     if (typeof extracted === 'string' && extracted.trim()) msg = extracted;
-  } catch {}
+  } catch (_e) {}
 
   const hay = msg.toLowerCase();
   if (msg.includes('免费体验访问令牌') && msg.includes('最大使用额度')) return true;

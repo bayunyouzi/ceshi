@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(targetUrl);
-  } catch {
+  } catch (_e) {
     return NextResponse.json({ error: "Invalid image url" }, { status: 400 });
   }
 
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
         "Cache-Control": "public, max-age=600, stale-while-revalidate=3600"
       }
     });
-  } catch {
+  } catch (_e) {
     return NextResponse.json({ error: "Image proxy failed" }, { status: 502 });
   }
 }

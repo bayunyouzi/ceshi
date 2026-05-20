@@ -5,7 +5,7 @@ import { parseApiError, logErrorAsync, buildErrorResponse, ErrorCode, validateMo
 import { normalizeEndpoint } from '@/lib/utils';
 
 // 这些配置现在只在服务器端运行，用户无法在浏览器中看到
-const DEFAULT_API_KEY = "f5f8dc3f65454077b2fd6560";
+const DEFAULT_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
 const DEFAULT_API_ENDPOINT = "http://124.156.219.145:8000/v1/chat/completions";
 const DEFAULT_MODEL = "grok-4.20-0309-non-reasoning"; // 默认非深思模型（快速响应）
 // 伪装成真实的浏览器请求头，绕过基础 WAF/Cloudflare

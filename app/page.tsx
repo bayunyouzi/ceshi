@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle } from "lucide-react";
+import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle, Sun, Moon } from "lucide-react";
 
 import { getRandomTags } from "../lib/utils";
 import { img2ImgPrompts, img2ImgEffectOptions } from "../lib/img2imgPrompts";
@@ -11,9 +11,9 @@ const AuthModal = dynamic(() => import("./components/AuthModal"), { ssr: false }
 export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
-  // GPT-Image-2 配置（从环境变量读取，在 Zeabur 中配置）
-  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "";
-  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1";
+  // GPT-Image-2 配置 - 使用独立的 API Key
+  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "f5f8dc3f65454077b2fd6560";
+  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
   const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "", recommended_settings: null });
@@ -36,6 +36,7 @@ export default function Home() {
   const [holdProgress, setHoldProgress] = useState(0);
   const [hasTriggeredHold, setHasTriggeredHold] = useState(false);
 
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isDeepThinking, setIsDeepThinking] = useState(false);
   const [userInput, setUserInput] = useState("");
   const [characterCount, setCharacterCount] = useState<'default' | 'solo' | 'duo'>('default');
@@ -60,19 +61,17 @@ export default function Home() {
   const VIDEO_DURATION_SECONDS = 10;
   const IMAGE_DEBOUNCE_MS = 1200;
   const IDEMPOTENCY_BUCKET_MS = 10000;
-  const aspectRatioOptions = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"] as const;
+  // GPT-Image-2 官方支持的比例
+  const aspectRatioOptions = ["1:1", "3:2", "2:3", "auto"] as const;
   type AspectRatioOption = (typeof aspectRatioOptions)[number];
   const aspectRatioSizeMap: Record<AspectRatioOption, string> = {
-    "1:1": "1024*1024",
-    "4:3": "1024*768",
-    "3:4": "768*1024",
-    "16:9": "1024*576",
-    "9:16": "576*1024",
-    "3:2": "1024*640",
-    "2:3": "640*1024"
+    "1:1": "1024x1024",
+    "3:2": "1536x1024",
+    "2:3": "1024x1536",
+    "auto": "auto"
   };
   const [imageAspectRatio, setImageAspectRatio] = useState<AspectRatioOption>("1:1");
-  const imageAspectRatioCss = imageAspectRatio.replace(":", " / ");
+  const imageAspectRatioCss = imageAspectRatio === "auto" ? "1 / 1" : imageAspectRatio.replace(":", " / ");
   const imagePreviewStyle = !isTxt2VideoMode ? { aspectRatio: imageAspectRatioCss, minHeight: "360px" } : undefined;
   
   // 默认配置（如果用户不填，就用空的，后端会自动使用默认配置）
@@ -133,6 +132,17 @@ export default function Home() {
     { name: "srwooo", amount: "5.00", time: "3月18日 15:35" },
   ];
 
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    if (next === 'light') {
+      document.documentElement.classList.add('light');
+    } else {
+      document.documentElement.classList.remove('light');
+    }
+    localStorage.setItem('theme', next);
+  };
+
   const clearHoldTimers = () => {
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
@@ -175,7 +185,7 @@ export default function Home() {
       try {
         const parsed = JSON.parse(cachedUser);
         if (parsed?.id) return `user_${parsed.id}`;
-      } catch {}
+      } catch (_e) {}
     }
     return "guest";
   };
@@ -187,7 +197,7 @@ export default function Home() {
   const saveSetting = (scope: string, key: string, value: string) => {
     try {
       localStorage.setItem(`${key}_${scope}`, value);
-    } catch {}
+    } catch (_e) {}
   };
 
   // GPT-Image-2 模型切换
@@ -221,7 +231,12 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // 加载用户自定义的设置（如果有）
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+      setTheme('light');
+      document.documentElement.classList.add('light');
+    }
+
     const scope = getSettingScope();
     const savedKey = readSetting(scope, "creative_api_key");
     const savedEndpoint = readSetting(scope, "creative_api_endpoint");
@@ -615,7 +630,7 @@ Example Output:
           const parsed = JSON.parse(jsonMatch[0]);
           return extractImageUrlFromAny(parsed);
         }
-      } catch {}
+      } catch (_e) {}
       return null;
     }
     if (Array.isArray(value)) {
@@ -653,7 +668,7 @@ Example Output:
           const parsed = JSON.parse(jsonMatch[0]);
           return extractVideoUrlFromAny(parsed);
         }
-      } catch {}
+      } catch (_e) {}
       return null;
     }
     if (Array.isArray(value)) {
@@ -754,100 +769,7 @@ Example Output:
     try {
       const token = localStorage.getItem("auth_token");
       
-      // GPT-Image-2 模式或用户自定义 API：直接从前端调用，绕过后端
-      if (isGptImage2Mode || (imageApiKey && imageApiEndpoint)) {
-        const apiKey = isGptImage2Mode ? GPT_IMAGE_2_API_KEY : imageApiKey;
-        const apiEndpoint = isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : imageApiEndpoint;
-        const model = isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || "gpt-image-2");
-        
-        if (!apiKey) {
-          throw new Error("请先配置 API Key");
-        }
-        if (!apiEndpoint) {
-          throw new Error("请先配置 API Endpoint");
-        }
-        
-        console.log('[前端直调] 模式:', isGptImage2Mode ? 'GPT-Image-2' : '用户自定义');
-        console.log('[前端直调] Endpoint:', apiEndpoint);
-        console.log('[前端直调] Model:', model);
-        
-        const sizeMap: Record<string, string> = {
-          "1:1": "1024x1024",
-          "4:3": "1024x768",
-          "3:4": "768x1024",
-          "16:9": "1024x576",
-          "9:16": "576x1024",
-          "3:2": "1024x640",
-          "2:3": "640x1024"
-        };
-        
-        const payload = {
-          model: model,
-          prompt: prompt,
-          n: 1,
-          response_format: "url",
-          size: sizeMap[imageAspectRatio] || "1024x1024"
-        };
-        
-        console.log('[前端直调] Payload:', payload);
-        
-        // 确定请求端点
-        let requestUrl = apiEndpoint;
-        if (!apiEndpoint.includes('/images/generations') && !apiEndpoint.includes('/chat/completions')) {
-          // 如果端点不包含具体路径，添加 /v1/images/generations
-          if (apiEndpoint.endsWith('/v1')) {
-            requestUrl = `${apiEndpoint}/images/generations`;
-          } else if (!apiEndpoint.includes('/v1')) {
-            requestUrl = `${apiEndpoint}/v1/images/generations`;
-          }
-        }
-        
-        console.log('[前端直调] 请求URL:', requestUrl);
-        
-        const apiResponse = await fetch(requestUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!apiResponse.ok) {
-          const errText = await apiResponse.text();
-          throw new Error(`API 错误 (${apiResponse.status}): ${errText.substring(0, 200)}`);
-        }
-        
-        const apiData = await apiResponse.json();
-        console.log('[前端直调] Response:', apiData);
-        
-        let imageUrl = apiData?.data?.[0]?.url || apiData?.images?.[0]?.url;
-        
-        if (!imageUrl) {
-          throw new Error("API 未返回图片 URL");
-        }
-        
-        // 修复 http 为 https
-        if (imageUrl.startsWith('http://')) {
-          imageUrl = imageUrl.replace('http://', 'https://');
-        }
-        
-        console.log('[前端直调] 图片 URL:', imageUrl);
-        setGeneratedImage(imageUrl);
-        setImageMeta({
-          displayModel: isGptImage2Mode ? 'GPT-Image-2' : model,
-          actualModel: model,
-          requestedModel: model,
-          modelChanged: false
-        });
-        if (!imageApiKey) deductLimit('image');
-        return;
-      }
-      
-      // 无自定义配置：走后端默认 Grok
+      // 所有请求统一走后端服务器代理
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
@@ -1042,109 +964,7 @@ Example Output:
 
       const token = localStorage.getItem("auth_token");
       
-      // GPT-Image-2 模式或用户自定义 API：直接从前端调用
-      if (isGptImage2Mode || (imageApiKey && imageApiEndpoint)) {
-        const apiKey = isGptImage2Mode ? GPT_IMAGE_2_API_KEY : imageApiKey;
-        const apiEndpoint = isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : imageApiEndpoint;
-        const model = isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || "gpt-image-2");
-        
-        if (!apiKey) {
-          throw new Error("请先配置 API Key");
-        }
-
-        console.log('[前端直调 图生图] 模式:', isGptImage2Mode ? 'GPT-Image-2' : '用户自定义');
-
-        let requestUrl = apiEndpoint;
-        if (!apiEndpoint.includes('/chat/completions')) {
-          if (apiEndpoint.endsWith('/v1')) {
-            requestUrl = `${apiEndpoint}/chat/completions`;
-          } else if (!apiEndpoint.includes('/v1')) {
-            requestUrl = `${apiEndpoint}/v1/chat/completions`;
-          }
-        }
-
-        console.log('[前端直调 图生图] 请求URL:', requestUrl);
-
-        const apiResponse = await fetch(requestUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: promptInstruction
-                  },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: uploadedImage
-                    }
-                  }
-                ]
-              }
-            ],
-            stream: false,
-            max_tokens: 4096
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!apiResponse.ok) {
-          const errText = await apiResponse.text();
-          throw new Error(`API 错误 (${apiResponse.status}): ${errText.substring(0, 200)}`);
-        }
-
-        const apiData = await apiResponse.json();
-        console.log('[前端直调 图生图] Response:', apiData);
-
-        let imageUrl: string | null = null;
-        const content = apiData?.choices?.[0]?.message?.content;
-
-        if (content) {
-          const urlMatch = content.match(/https?:\/\/[^\s\)"'<]+/);
-          if (urlMatch) {
-            imageUrl = urlMatch[0];
-          }
-          const b64Match = content.match(/data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+/);
-          if (b64Match) {
-            imageUrl = b64Match[0];
-          }
-        }
-
-        if (!imageUrl) {
-          imageUrl = apiData?.data?.[0]?.url || apiData?.data?.[0]?.b64_json;
-        }
-
-        if (!imageUrl) {
-          throw new Error("API 未返回图片，仅返回了文本: " + (content || "").substring(0, 100));
-        }
-
-        if (!imageUrl.startsWith('data:') && imageUrl.startsWith('http://')) {
-          imageUrl = imageUrl.replace('http://', 'https://');
-        }
-
-        console.log('[前端直调 图生图] 图片:', imageUrl.substring(0, 100));
-        setGeneratedImage(imageUrl);
-        setImageMeta({
-          displayModel: isGptImage2Mode ? 'GPT-Image-2' : model,
-          actualModel: model,
-          requestedModel: model,
-          modelChanged: false
-        });
-        if (!imageApiKey) deductLimit('image');
-        return;
-      }
-      
-      // 无自定义配置：走后端默认 Grok
+      // 所有请求统一走后端服务器代理
       const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
 
       const response = await fetch("/api/generate-image", {
@@ -1249,17 +1069,13 @@ Example Output:
     setImageMeta(null);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
     const useCustomPromptConfig = Boolean(apiKey || apiEndpoint || modelName);
 
-    // 硬扛方案：前端直连默认配置 (与生图统一使用 grok2api)
-    const FALLBACK_ENDPOINT = "http://124.156.219.145:8000/v1/chat/completions";
-    const FALLBACK_KEY = "f5f8dc3f65454077b2fd6560";
-    // 根据是否开启深度思考动态切换模型
     const FALLBACK_MODEL = isVideoMode ? "grok-4.20-0309-non-reasoning" : (isDeepThinking ? "grok-4.20-0309-reasoning" : "grok-4.20-0309-non-reasoning");
     
-    const finalEndpoint = apiEndpoint || FALLBACK_ENDPOINT;
-    const finalApiKey = apiKey || FALLBACK_KEY;
+    const finalEndpoint = apiEndpoint || undefined;
+    const finalApiKey = apiKey || undefined;
     const finalModel = modelName || FALLBACK_MODEL;
 
     try {
@@ -1306,7 +1122,7 @@ Example Output:
         const errTextRaw = await response.text();
         try {
           errData = JSON.parse(errTextRaw);
-        } catch {
+        } catch (_e) {
           errData = { error: errTextRaw };
         }
         throw new Error(errData.error?.message || errData.error || `API 请求失败: ${response.status}`);
@@ -1452,23 +1268,23 @@ Example Output:
   const generatedImagePreviewSrc = generatedImage ? buildDisplayImageSrc(generatedImage) : "";
 
   return (
-    <div className="min-h-screen bg-[#000000] text-zinc-100 font-sans selection:bg-indigo-500/30 overflow-hidden relative pb-20">
+    <div className="min-h-screen bg-theme-bg text-theme-text-primary font-sans selection:bg-indigo-500/30 overflow-hidden relative pb-20">
       {/* Dynamic Background */}
-      <div className="fixed top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-indigo-900/20 blur-[120px] pointer-events-none mix-blend-screen" />
-      <div className="fixed bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-rose-900/10 blur-[120px] pointer-events-none mix-blend-screen" />
-      <div className="absolute top-0 left-0 w-full h-full bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none z-0" />
+      <div className="fixed top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full blur-[120px] pointer-events-none" style={{backgroundColor: 'var(--theme-glow-indigo)', mixBlendMode: 'var(--theme-glow-blend)'}} />
+      <div className="fixed bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full blur-[120px] pointer-events-none" style={{backgroundColor: 'var(--theme-glow-rose)', mixBlendMode: 'var(--theme-glow-blend)'}} />
+      <div className="absolute top-0 left-0 w-full h-full bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none z-0" style={{backgroundImage:'linear-gradient(var(--theme-grid-line) 1px,transparent 1px),linear-gradient(90deg,var(--theme-grid-line) 1px,transparent 1px)'}} />
 
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-6">
         {/* Header */}
-        <header className="flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-0 mb-8 sm:mb-16 md:mb-24 bg-white/[0.02] border border-white/[0.05] rounded-2xl px-3 sm:px-6 py-4 backdrop-blur-md">
+        <header className="flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-0 mb-8 sm:mb-16 md:mb-24 bg-theme-bg-card border border-theme-border rounded-2xl px-3 sm:px-6 py-4 backdrop-blur-md">
           <div className="flex items-center justify-between w-full sm:w-auto">
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
                 <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
               </div>
               <div className="min-w-0">
-                <h1 className="font-black tracking-wider text-sm sm:text-base bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400 truncate">PROMPT.STUDIO</h1>
-                <p className="text-[10px] text-zinc-500 font-mono tracking-widest hidden sm:block">中文创意提示词工作台</p>
+                <h1 className="font-black tracking-wider text-sm sm:text-base bg-clip-text text-transparent bg-gradient-to-r from-theme-hero-from to-theme-hero-to truncate">PROMPT.STUDIO</h1>
+                <p className="text-[10px] text-theme-text-muted font-mono tracking-widest hidden sm:block">中文创意提示词工作台</p>
               </div>
             </div>
             
@@ -1485,7 +1301,7 @@ Example Output:
               ) : (
                 <button
                   onClick={() => setShowAuthModal(true)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-white text-black hover:bg-zinc-200 rounded-lg text-xs font-bold transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] whitespace-nowrap"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-theme-bg-card text-theme-text-primary hover:bg-theme-bg-card-hover border border-theme-border-strong rounded-lg text-xs font-bold transition-all whitespace-nowrap"
                 >
                   <User className="w-3.5 h-3.5" />
                   <span>登录</span>
@@ -1509,7 +1325,7 @@ Example Output:
               href="https://qm.qq.com/q/Q982XX0UAo" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-zinc-900/50 hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:text-white rounded-xl text-xs font-medium transition-all flex-shrink-0"
+              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-theme-bg-card hover:bg-theme-bg-card-hover border border-theme-border-strong text-theme-text-primary hover:text-theme-text-primary rounded-xl text-xs font-medium transition-all flex-shrink-0"
             >
               <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg">
                 <path d="M11.984 0A12 12 0 0 0 0 12c0 2.057.534 4.024 1.488 5.753l-1.077 3.993a.5.5 0 0 0 .61.61l3.993-1.077A11.944 11.944 0 0 0 11.984 24c6.627 0 12-5.373 12-12s-5.373-12-12-12zM7.5 13.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/>
@@ -1533,14 +1349,21 @@ Example Output:
               <span className="text-xs font-bold">给点？</span>
             </button>
             <button 
+              onClick={toggleTheme}
+              className="p-2 sm:p-2 text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-bg-card-hover rounded-xl transition-all flex-shrink-0"
+              title={theme === 'dark' ? "切换到白天模式" : "切换到黑夜模式"}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+            </button>
+            <button 
               onClick={() => setShowSettings(!showSettings)}
-              className="p-2 sm:p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-xl transition-all flex-shrink-0"
+              className="p-2 sm:p-2 text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-bg-card-hover rounded-xl transition-all flex-shrink-0"
               title="API 设置"
             >
               <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             
-            <div className="hidden sm:block w-px h-6 bg-white/10 mx-1"></div>
+            <div className="hidden sm:block w-px h-6 bg-theme-border-strong mx-1"></div>
 
             <div className="hidden sm:block">
               {user ? (
@@ -1554,7 +1377,7 @@ Example Output:
               ) : (
                 <button
                   onClick={() => setShowAuthModal(true)}
-                  className="flex items-center gap-2 px-2 sm:px-5 py-2 bg-white text-black hover:bg-zinc-200 rounded-xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                  className="flex items-center gap-2 px-2 sm:px-5 py-2 bg-theme-bg-card text-theme-text-primary hover:bg-theme-bg-card-hover border border-theme-border-strong rounded-xl text-xs font-bold transition-all"
                 >
                   <User className="w-4 h-4" />
                   <span>登录 / 注册</span>
@@ -1566,30 +1389,30 @@ Example Output:
 
         {/* Hero Typography */}
         <div className="text-center mb-16 space-y-6">
-          <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-zinc-500 drop-shadow-2xl">
+          <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-theme-hero-from to-theme-hero-to drop-shadow-2xl">
             让灵感 <br className="md:hidden" />
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-rose-400">直接出图</span>
           </h2>
-          <p className="text-zinc-400 max-w-2xl mx-auto text-base md:text-lg font-light tracking-wide">
+          <p className="text-theme-text-secondary max-w-2xl mx-auto text-base md:text-lg font-light tracking-wide">
             突破想象边界。专业的二次元、写实及视频 AI 提示词生成与图生图引擎。
           </p>
           
           {!user && (
-            <div className="flex flex-wrap justify-center gap-3 text-xs font-mono text-zinc-500 mt-4">
-              <span className={`px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm ${guestLimits.prompt > 0 ? 'border-indigo-500/30 text-indigo-400' : 'border-rose-500/30 text-rose-500'}`}>
+            <div className="flex flex-wrap justify-center gap-3 text-xs font-mono text-theme-text-muted mt-4">
+              <span className={`px-4 py-2 rounded-xl border bg-theme-bg-input backdrop-blur-sm ${guestLimits.prompt > 0 ? 'border-indigo-500/30 text-indigo-400' : 'border-rose-500/30 text-rose-500'}`}>
                 免费提示词：{guestLimits.prompt}
               </span>
-              <span className={`px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm ${guestLimits.image > 0 ? 'border-indigo-500/30 text-indigo-400' : 'border-rose-500/30 text-rose-500'}`}>
+              <span className={`px-4 py-2 rounded-xl border bg-theme-bg-input backdrop-blur-sm ${guestLimits.image > 0 ? 'border-indigo-500/30 text-indigo-400' : 'border-rose-500/30 text-rose-500'}`}>
                 免费生图：{guestLimits.image}
               </span>
-              <span className="px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm border-amber-500/30 text-amber-300">
+              <span className="px-4 py-2 rounded-xl border bg-theme-bg-input backdrop-blur-sm border-amber-500/30 text-amber-300">
                 文生视频：登录后可用
               </span>
             </div>
           )}
           {user && (
-            <div className="flex flex-wrap justify-center gap-3 text-xs font-mono text-zinc-500 mt-4">
-              <span className={`px-4 py-2 rounded-xl border bg-black/40 backdrop-blur-sm ${user.isVideoLimitExempt ? 'border-emerald-500/30 text-emerald-400' : ((user.videoRemainingToday ?? 0) > 0 ? 'border-cyan-500/30 text-cyan-400' : 'border-rose-500/30 text-rose-500')}`}>
+            <div className="flex flex-wrap justify-center gap-3 text-xs font-mono text-theme-text-muted mt-4">
+              <span className={`px-4 py-2 rounded-xl border bg-theme-bg-input backdrop-blur-sm ${user.isVideoLimitExempt ? 'border-emerald-500/30 text-emerald-400' : ((user.videoRemainingToday ?? 0) > 0 ? 'border-cyan-500/30 text-cyan-400' : 'border-rose-500/30 text-rose-500')}`}>
                 {user.isVideoLimitExempt ? '视频额度：无限制' : `今日视频剩余：${user.videoRemainingToday ?? 0}/${user.videoDailyLimit ?? 10}`}
               </span>
             </div>
@@ -1607,7 +1430,7 @@ Example Output:
 
         {/* Settings Panel */}
         {showSettings && (
-          <div className="w-full bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 md:p-10 mb-12 shadow-2xl animate-in fade-in slide-in-from-top-4 relative overflow-hidden">
+          <div className="w-full bg-theme-bg-card backdrop-blur-3xl border border-theme-border-strong rounded-3xl p-6 md:p-10 mb-12 shadow-2xl animate-in fade-in slide-in-from-top-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500"></div>
             <div className="grid md:grid-cols-2 gap-10">
               {/* Prompt API */}
@@ -1615,11 +1438,11 @@ Example Output:
                 <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-400">
                   <Wand2 className="w-5 h-5" /> 提示词接口配置
                 </h3>
-                <p className="text-xs text-zinc-500">用于生成高质量的英文 Prompt。默认使用内置高速通道。</p>
+                <p className="text-xs text-theme-text-muted">用于生成高质量的英文 Prompt。默认使用内置高速通道。</p>
                 <div className="space-y-3">
-                  <input type="text" value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} placeholder="自定义接口地址（留空使用内置）" className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
-                  <input type="text" value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="自定义模型名称（留空使用内置）" className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
-                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="自定义密钥（留空使用内置）" className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
+                  <input type="text" value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} placeholder="自定义接口地址（留空使用内置）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
+                  <input type="text" value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="自定义模型名称（留空使用内置）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
+                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="自定义密钥（留空使用内置）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
                 </div>
               </div>
               {/* Image API */}
@@ -1627,16 +1450,16 @@ Example Output:
                 <h3 className="text-lg font-bold flex items-center gap-2 text-rose-400">
                   <ImageIcon className="w-5 h-5" /> 生图接口配置
                 </h3>
-                <p className="text-xs text-zinc-500">用于实际生成图片。<span className="text-rose-400">填入自定义 Key 解除限制。</span></p>
+                <p className="text-xs text-theme-text-muted">用于实际生成图片。<span className="text-rose-400">填入自定义 Key 解除限制。</span></p>
                 <div className="space-y-3">
-                  <input type="text" value={imageApiEndpoint} onChange={(e) => setImageApiEndpoint(e.target.value)} placeholder="接口地址（如 https://api...）" className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
-                  <input type="text" value={imageModelName} onChange={(e) => setImageModelName(e.target.value)} placeholder="模型名称（如 dall-e-3）" className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
-                  <input type="password" value={imageApiKey} onChange={(e) => setImageApiKey(e.target.value)} placeholder="密钥（sk-...）" className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
+                  <input type="text" value={imageApiEndpoint} onChange={(e) => setImageApiEndpoint(e.target.value)} placeholder="接口地址（如 https://api...）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
+                  <input type="text" value={imageModelName} onChange={(e) => setImageModelName(e.target.value)} placeholder="模型名称（如 dall-e-3）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
+                  <input type="password" value={imageApiKey} onChange={(e) => setImageApiKey(e.target.value)} placeholder="密钥（sk-...）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
                 </div>
               </div>
             </div>
             <div className="mt-8 flex justify-end">
-              <button onClick={saveSettings} className="flex items-center gap-2 bg-white text-black px-8 py-3 rounded-xl font-bold transition-all hover:scale-95">
+              <button onClick={saveSettings} className="flex items-center gap-2 bg-theme-bg-card text-theme-text-primary px-8 py-3 rounded-xl font-bold transition-all hover:scale-95 border border-theme-border-strong">
                 <Save className="w-4 h-4" /> 保存配置
               </button>
             </div>
@@ -1648,40 +1471,40 @@ Example Output:
           
           {/* Left Column: Mode Selector */}
           <div className="lg:col-span-3 flex flex-col gap-6">
-            <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-5 backdrop-blur-xl shadow-2xl">
-              <h3 className="text-xs font-mono text-zinc-500 mb-4 px-2 tracking-widest uppercase">工作模式 / Mode</h3>
+            <div className="bg-theme-bg-card border border-theme-border rounded-[2rem] p-5 backdrop-blur-xl shadow-2xl">
+              <h3 className="text-xs font-mono text-theme-text-muted mb-4 px-2 tracking-widest uppercase">工作模式 / Mode</h3>
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => { setIsAnime(true); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsImg2ImgMode(false); }}
-                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isAnime && !isVideoMode && !isTxt2VideoMode && !isImg2ImgMode ? 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
+                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isAnime && !isVideoMode && !isTxt2VideoMode && !isImg2ImgMode ? 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'hover:bg-theme-bg-card-hover text-theme-text-secondary border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><Sparkles className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">二次元动漫</span></div>
                   {isAnime && !isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,1)]" />}
                 </button>
                 <button
                   onClick={() => { setIsAnime(false); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsImg2ImgMode(false); }}
-                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${!isAnime && !isVideoMode && !isTxt2VideoMode && !isImg2ImgMode ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
+                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${!isAnime && !isVideoMode && !isTxt2VideoMode && !isImg2ImgMode ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'hover:bg-theme-bg-card-hover text-theme-text-secondary border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><ImageIcon className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">写实摄影</span></div>
                   {!isAnime && !isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,1)]" />}
                 </button>
                 <button
                   onClick={() => { setIsVideoMode(true); setIsTxt2VideoMode(false); setIsDeepThinking(false); setIsImg2ImgMode(false); }}
-                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isVideoMode && !isTxt2VideoMode && !isImg2ImgMode ? 'bg-purple-500/10 border border-purple-500/30 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
+                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isVideoMode && !isTxt2VideoMode && !isImg2ImgMode ? 'bg-purple-500/10 border border-purple-500/30 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.1)]' : 'hover:bg-theme-bg-card-hover text-theme-text-secondary border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><Video className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">视频提示词</span></div>
                   {isVideoMode && !isTxt2VideoMode && !isImg2ImgMode && <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,1)]" />}
                 </button>
                 <button
                   onClick={() => { setIsTxt2VideoMode(true); setIsVideoMode(false); setIsImg2ImgMode(false); if (isGptImage2Mode) { setIsGptImage2Mode(false); } }}
-                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isTxt2VideoMode ? 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
+                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isTxt2VideoMode ? 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.1)]' : 'hover:bg-theme-bg-card-hover text-theme-text-secondary border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><Video className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">文生视频</span></div>
                   {isTxt2VideoMode && <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,1)]" />}
                 </button>
                 <button
                   onClick={() => { setIsImg2ImgMode(true); setIsVideoMode(false); setIsTxt2VideoMode(false); setIsAnime(false); }}
-                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isImg2ImgMode ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'hover:bg-white/5 text-zinc-400 border border-transparent'}`}
+                  className={`flex items-center justify-between px-4 py-3.5 rounded-2xl transition-all duration-300 ${isImg2ImgMode ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'hover:bg-theme-bg-card-hover text-theme-text-secondary border border-transparent'}`}
                 >
                   <div className="flex items-center gap-3"><ImageIcon className="w-4 h-4" /><span className="font-bold text-sm tracking-wide">AI 图生图</span></div>
                   {isImg2ImgMode && <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,1)]" />}
@@ -1691,8 +1514,8 @@ Example Output:
 
             {/* Sub-controls (Safe mode, Characters) */}
             {!isImg2ImgMode && (
-              <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-5 backdrop-blur-xl space-y-5 shadow-2xl">
-                <h3 className="text-xs font-mono text-zinc-500 px-2 tracking-widest uppercase">参数设置 / Settings</h3>
+              <div className="bg-theme-bg-card border border-theme-border rounded-[2rem] p-5 backdrop-blur-xl space-y-5 shadow-2xl">
+                <h3 className="text-xs font-mono text-theme-text-muted px-2 tracking-widest uppercase">参数设置 / Settings</h3>
                 <div className="flex flex-col gap-3">
                   <button
                     onClick={() => {
@@ -1724,7 +1547,7 @@ Example Output:
                     onTouchEnd={() => {
                       endHold();
                     }}
-                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border select-none relative overflow-hidden ${isSafeMode ? "bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10" : (isUncensoredMode ? "bg-purple-500/20 border-purple-500/50 text-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.3)] animate-pulse" : "bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.15)]")}`}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border select-none relative overflow-hidden ${isSafeMode ? "bg-theme-bg-card border-theme-border-strong text-theme-text-primary hover:bg-theme-bg-card-hover" : (isUncensoredMode ? "bg-purple-500/20 border-purple-500/50 text-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.3)] animate-pulse" : "bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.15)]")}`}
                   >
                     {/* 长按进度条 */}
                     {isHolding && !isUncensoredMode && (
@@ -1742,7 +1565,7 @@ Example Output:
                   <button
                     onClick={() => setIsDeepThinking(!isDeepThinking)}
                     disabled={isVideoMode || isTxt2VideoMode}
-                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isDeepThinking || isVideoMode || isTxt2VideoMode ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" : "bg-white/5 border-white/10 text-zinc-500 hover:bg-white/10 hover:text-zinc-300"}`}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isDeepThinking || isVideoMode || isTxt2VideoMode ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-theme-text-secondary"}`}
                   >
                     <Brain className="w-4 h-4" />
                     {isVideoMode ? "视频提示词: 固定 grok-3" : (isTxt2VideoMode ? "文生视频: 不适用" : (isDeepThinking ? "深度思考: 开启" : "深度思考: 关闭"))}
@@ -1750,7 +1573,7 @@ Example Output:
                   <button
                     onClick={toggleGptImage2Mode}
                     disabled={isVideoMode || isTxt2VideoMode}
-                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode) ? "bg-white/5 border-white/10 text-zinc-600 cursor-not-allowed" : "bg-white/5 border-white/10 text-zinc-500 hover:bg-white/10 hover:text-amber-300 hover:border-amber-500/30"}`}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode) ? "bg-theme-bg-card border-theme-border-strong text-theme-text-placeholder cursor-not-allowed" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-amber-300 hover:border-amber-500/30"}`}
                   >
                     <ImageIcon className="w-4 h-4" />
                     {isGptImage2Mode ? (isImg2ImgMode ? "GPT-Image-2 图生图: 已开启" : "GPT-Image-2 文生图: 已开启") : "GPT-Image-2: 点击切换"}
@@ -1774,8 +1597,8 @@ Example Output:
 
                 {!isVideoMode && !isTxt2VideoMode && (
                   <div className="space-y-3 pt-2">
-                    <label className="text-[10px] font-mono text-zinc-500 px-2 tracking-widest uppercase block">角色数量 / Characters</label>
-                    <div className="bg-black/50 p-1.5 rounded-xl flex gap-1 border border-white/5">
+                    <label className="text-[10px] font-mono text-theme-text-muted px-2 tracking-widest uppercase block">角色数量 / Characters</label>
+                    <div className="bg-theme-bg-input p-1.5 rounded-xl flex gap-1 border border-theme-border">
                       {[
                         { id: 'default', label: '随机' },
                         { id: 'solo', label: '单人' },
@@ -1784,7 +1607,7 @@ Example Output:
                         <button
                           key={type.id}
                           onClick={() => setCharacterCount(type.id as any)}
-                          className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-1.5 ${characterCount === type.id ? "bg-white/10 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"}`}
+                          className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-1.5 ${characterCount === type.id ? "bg-theme-bg-card-hover text-theme-text-primary shadow-sm" : "text-theme-text-muted hover:text-theme-text-secondary hover:bg-theme-bg-card"}`}
                         >
                           {type.id === 'solo' && <User className="w-3 h-3" />}
                           {type.id === 'duo' && <Users className="w-3 h-3" />}
@@ -1800,25 +1623,25 @@ Example Output:
 
           {/* Middle Column: Input & Prompt Results */}
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col relative z-10">
+            <div className="bg-theme-bg-card border border-theme-border rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col relative z-10">
               
               {!isImg2ImgMode ? (
                 <div className="flex flex-col gap-5">
                   <div>
-                    <label className="text-xs font-mono text-zinc-400 mb-3 block tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-mono text-theme-text-secondary mb-3 block tracking-widest flex items-center gap-2">
                       <Sparkles className={`w-3.5 h-3.5 ${isTxt2VideoMode ? "text-cyan-400" : "text-indigo-400"}`} /> {isTxt2VideoMode ? "视频描述 / Text to Video" : "创意描述 / 中文扩写"}
                     </label>
                     <textarea
                       value={userInput}
                       onChange={(e) => setUserInput(e.target.value)}
                       placeholder={isTxt2VideoMode ? "描述你想要的视频，例如：雨夜赛博朋克街头，镜头缓慢推进，少女转身看向镜头..." : "描述你想要的画面，例如：一个赛博朋克风格的少女站在霓虹街头，雨水打湿了她的衣服..."}
-                      className={`w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-sm text-zinc-200 placeholder-zinc-700 outline-none transition-all resize-none h-40 shadow-inner ${isTxt2VideoMode ? "focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50" : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"}`}
+                      className={`w-full bg-theme-bg-input border border-theme-border-strong rounded-2xl px-6 py-5 text-sm text-theme-text-primary placeholder-theme-text-placeholder outline-none transition-all resize-none h-40 shadow-inner ${isTxt2VideoMode ? "focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50" : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"}`}
                     />
                   </div>
                   <button
                     onClick={isTxt2VideoMode ? handleGenerateVideo : handleGenerate}
                     disabled={isTxt2VideoMode ? videoLoading : loading}
-                    className={`w-full py-4 rounded-2xl text-sm md:text-base font-black tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${(isTxt2VideoMode ? videoLoading : loading) ? "bg-zinc-800 text-zinc-500 cursor-wait" : (isTxt2VideoMode ? "bg-cyan-500 text-white hover:bg-cyan-400 hover:scale-[0.98] shadow-[0_0_30px_rgba(34,211,238,0.25)]" : "bg-white text-black hover:bg-zinc-200 hover:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.15)]")}`}
+                    className={`w-full py-4 rounded-2xl text-sm md:text-base font-black tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${(isTxt2VideoMode ? videoLoading : loading) ? "bg-theme-bg-card text-theme-text-muted cursor-wait" : (isTxt2VideoMode ? "bg-cyan-500 text-white hover:bg-cyan-400 hover:scale-[0.98] shadow-[0_0_30px_rgba(34,211,238,0.25)]" : "bg-theme-bg-card text-theme-text-primary hover:bg-theme-bg-card-hover border border-theme-border-strong hover:scale-[0.98]")}`}
                   >
                     {(isTxt2VideoMode ? videoLoading : loading) ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
                     {isTxt2VideoMode ? (videoLoading ? "视频生成中..." : `开始生成视频 (${VIDEO_DURATION_SECONDS}s)`) : (loading ? "灵感生成中..." : "生成提示词")}
@@ -1827,10 +1650,10 @@ Example Output:
               ) : (
                 <div className="flex flex-col gap-6 animate-in fade-in">
                   <div>
-                    <label className="text-xs font-mono text-zinc-400 mb-3 block tracking-widest flex items-center gap-2">
+                    <label className="text-xs font-mono text-theme-text-secondary mb-3 block tracking-widest flex items-center gap-2">
                       <ImageIcon className="w-3.5 h-3.5 text-rose-400" /> 上传参考图
                     </label>
-                    <div className="w-full h-56 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center bg-black/20 hover:bg-black/40 hover:border-rose-500/50 transition-all duration-300 relative overflow-hidden group">
+                    <div className="w-full h-56 border-2 border-dashed border-theme-border-strong rounded-2xl flex flex-col items-center justify-center bg-theme-bg-input hover:bg-theme-bg-input hover:border-rose-500/50 transition-all duration-300 relative overflow-hidden group">
                       {uploadedImage ? (
                         <>
                           <img src={uploadedImage} alt="Uploaded" className="h-full w-full object-contain z-10" />
@@ -1841,8 +1664,8 @@ Example Output:
                           </div>
                         </>
                       ) : (
-                        <div className="flex flex-col items-center text-zinc-500 group-hover:text-rose-400 transition-colors">
-                          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-500 shadow-inner">
+                        <div className="flex flex-col items-center text-theme-text-muted group-hover:text-rose-400 transition-colors">
+                          <div className="w-16 h-16 rounded-full bg-theme-bg-card flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-500 shadow-inner">
                             <ImageIcon className="w-6 h-6 opacity-70" />
                           </div>
                           <p className="text-sm font-bold tracking-widest">点击或拖拽上传图片</p>
@@ -1853,13 +1676,13 @@ Example Output:
                   </div>
 
                   <div>
-                    <label className="text-xs font-mono text-zinc-400 mb-3 block tracking-widest">转换效果 / Style</label>
+                    <label className="text-xs font-mono text-theme-text-secondary mb-3 block tracking-widest">转换效果 / Style</label>
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                       {img2ImgEffectOptions.map((effect) => (
                         <button
                           key={effect.id}
                           onClick={() => setImg2ImgEffect(effect.id)}
-                          className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${img2ImgEffect === effect.id ? "bg-rose-500/20 border-rose-500/50 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]" : "bg-black/40 border-white/5 text-zinc-500 hover:text-zinc-300 hover:bg-white/10"}`}
+                          className={`py-2.5 rounded-xl text-xs font-bold transition-all border ${img2ImgEffect === effect.id ? "bg-rose-500/20 border-rose-500/50 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]" : "bg-theme-bg-input border-theme-border text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-bg-card-hover"}`}
                         >
                           {effect.label}
                         </button>
@@ -1868,19 +1691,19 @@ Example Output:
                   </div>
 
                   <div>
-                    <label className="text-xs font-mono text-zinc-400 mb-3 block tracking-widest">额外指令 / Optional</label>
+                    <label className="text-xs font-mono text-theme-text-secondary mb-3 block tracking-widest">额外指令 / Optional</label>
                     <textarea
                       value={img2ImgInput}
                       onChange={(e) => setImg2ImgInput(e.target.value)}
                       placeholder="例如：换成红色的头发，背景变成赛博朋克城市..."
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-sm text-zinc-300 placeholder-zinc-700 focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 outline-none transition-all resize-none h-24 shadow-inner"
+                      className="w-full bg-theme-bg-input border border-theme-border-strong rounded-2xl px-5 py-4 text-sm text-theme-text-primary placeholder-theme-text-placeholder focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 outline-none transition-all resize-none h-24 shadow-inner"
                     />
                   </div>
 
                   <button
                     onClick={handleImg2ImgSubmit}
                     disabled={imageLoading}
-                    className={`w-full py-4 rounded-2xl text-sm md:text-base font-black tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${imageLoading ? "bg-zinc-800 text-zinc-500 cursor-wait" : "bg-rose-500 text-white hover:bg-rose-400 hover:scale-[0.98] shadow-[0_0_30px_rgba(244,63,94,0.3)]"}`}
+                    className={`w-full py-4 rounded-2xl text-sm md:text-base font-black tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${imageLoading ? "bg-theme-bg-card text-theme-text-muted cursor-wait" : "bg-rose-500 text-white hover:bg-rose-400 hover:scale-[0.98] shadow-[0_0_30px_rgba(244,63,94,0.3)]"}`}
                   >
                     {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
                     {imageLoading ? "图像处理中..." : "开始图生图"}
@@ -1891,15 +1714,15 @@ Example Output:
             
             {/* Prompt Results (Moved here) */}
             {!isImg2ImgMode && !isTxt2VideoMode && (
-              <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col gap-5 animate-in fade-in slide-in-from-top-4">
-                <h3 className="text-xs font-mono text-zinc-400 tracking-widest uppercase flex items-center gap-2 border-b border-white/5 pb-4">
+              <div className="bg-theme-bg-card border border-theme-border rounded-[2rem] p-6 md:p-8 backdrop-blur-xl shadow-2xl flex flex-col gap-5 animate-in fade-in slide-in-from-top-4">
+                <h3 className="text-xs font-mono text-theme-text-secondary tracking-widest uppercase flex items-center gap-2 border-b border-theme-border pb-4">
                   <Wand2 className="w-3.5 h-3.5" /> 生成结果 / Result
                 </h3>
                 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest">
                     <span className="text-indigo-400 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div> 正向提示词</span>
-                    <button onClick={() => copyToClipboard(result.prompt, "prompt")} className="hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
+                    <button onClick={() => copyToClipboard(result.prompt, "prompt")} className="hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
                       {copied === "prompt" ? "已复制 ✓" : "复制 / Copy"}
                     </button>
                   </div>
@@ -1907,14 +1730,14 @@ Example Output:
                     value={result.prompt}
                     onChange={(e) => setResult({ ...result, prompt: e.target.value })}
                     placeholder="点击「生成提示词」自动生成，或直接在此输入提示词..."
-                    className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-indigo-100/90 h-32 resize-none focus:outline-none focus:border-indigo-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
+                    className="w-full p-4 bg-theme-bg-input border border-theme-border rounded-2xl font-mono text-xs leading-relaxed text-indigo-100/90 h-32 resize-none focus:outline-none focus:border-indigo-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
                   />
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest">
                     <span className="text-rose-400 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-rose-400"></div> 负向提示词</span>
-                    <button onClick={() => copyToClipboard(result.negative_prompt, "negative")} className="hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
+                    <button onClick={() => copyToClipboard(result.negative_prompt, "negative")} className="hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
                       {copied === "negative" ? "已复制 ✓" : "复制 / Copy"}
                     </button>
                   </div>
@@ -1922,18 +1745,18 @@ Example Output:
                     value={result.negative_prompt}
                     onChange={(e) => setResult({ ...result, negative_prompt: e.target.value })}
                     placeholder="lowres, bad anatomy, bad hands, text, error, missing fingers..."
-                    className="w-full p-4 bg-black/40 border border-white/5 rounded-2xl font-mono text-xs leading-relaxed text-rose-100/70 h-24 resize-none focus:outline-none focus:border-rose-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
+                    className="w-full p-4 bg-theme-bg-input border border-theme-border rounded-2xl font-mono text-xs leading-relaxed text-rose-100/70 h-24 resize-none focus:outline-none focus:border-rose-500/50 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent shadow-inner"
                   />
                 </div>
 
                 {result.recommended_settings && (
                   <div className="pt-2">
-                    <label className="text-[10px] font-mono text-zinc-500 tracking-widest uppercase mb-3 block">推荐参数 / Params</label>
+                    <label className="text-[10px] font-mono text-theme-text-muted tracking-widest uppercase mb-3 block">推荐参数 / Params</label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {Object.entries(result.recommended_settings).slice(0, 4).map(([key, value]) => (
-                        <div key={key} className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors">
-                          <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-widest mb-1">{key.replace('_', ' ')}</span>
-                          <span className="text-xs font-bold text-zinc-300 truncate w-full" title={String(value)}>{String(value)}</span>
+                        <div key={key} className="bg-theme-bg-input p-3 rounded-xl border border-theme-border flex flex-col items-center justify-center text-center hover:bg-theme-bg-card-hover transition-colors">
+                          <span className="text-[9px] text-theme-text-muted font-mono uppercase tracking-widest mb-1">{key.replace('_', ' ')}</span>
+                          <span className="text-xs font-bold text-theme-text-primary truncate w-full" title={String(value)}>{String(value)}</span>
                         </div>
                       ))}
                     </div>
@@ -1953,21 +1776,21 @@ Example Output:
 
           {/* Right Column: Preview & Image Generation */}
           <div className="lg:col-span-5 flex flex-col gap-6">
-            <div className="bg-white/[0.02] border border-white/[0.05] rounded-[2rem] p-6 backdrop-blur-xl shadow-2xl flex flex-col lg:sticky lg:top-6 lg:max-h-[92vh] overflow-auto">
-              <div className="flex items-center justify-between text-xs font-mono text-zinc-400 tracking-widest mb-4 pb-4 border-b border-white/5 shrink-0">
+            <div className="bg-theme-bg-card border border-theme-border rounded-[2rem] p-6 backdrop-blur-xl shadow-2xl flex flex-col lg:sticky lg:top-6 lg:max-h-[92vh] overflow-auto">
+              <div className="flex items-center justify-between text-xs font-mono text-theme-text-secondary tracking-widest mb-4 pb-4 border-b border-theme-border shrink-0">
                 <span className="flex items-center gap-2 uppercase">
                   <span className={`w-2 h-2 rounded-full ${(isTxt2VideoMode ? generatedVideo : generatedImage) ? 'bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-700'}`}></span>
                   {isTxt2VideoMode ? "视频预览 / Preview" : "出图预览 / Preview"}
                 </span>
                 {(isTxt2VideoMode ? generatedVideo : generatedImage) && (
-                  <button onClick={() => handleViewMedia((isTxt2VideoMode ? generatedVideo : generatedImagePreviewSrc) || '', isTxt2VideoMode)} className="text-zinc-400 hover:text-white transition-colors bg-white/5 px-3 py-1 rounded-lg">
+                  <button onClick={() => handleViewMedia((isTxt2VideoMode ? generatedVideo : generatedImagePreviewSrc) || '', isTxt2VideoMode)} className="text-theme-text-secondary hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
                     {isTxt2VideoMode ? "查看视频 ↗" : "查看原图 ↗"}
                   </button>
                 )}
               </div>
               {!isTxt2VideoMode && imageMeta?.displayModel && (
-                <div className="mb-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-zinc-400">
-                  当前展示模型：<span className="text-zinc-200">{imageMeta.displayModel}</span>
+                <div className="mb-4 rounded-xl border border-theme-border-strong bg-theme-bg-input px-3 py-2 text-[11px] text-theme-text-secondary">
+                  当前展示模型：<span className="text-theme-text-primary">{imageMeta.displayModel}</span>
                   {imageMeta.modelChanged && imageMeta.actualModel ? ` · 高峰期自动切换为 ${imageMeta.actualModel}` : ""}
                 </div>
               )}
@@ -1976,9 +1799,9 @@ Example Output:
               {!isVideoMode && !isTxt2VideoMode && result?.prompt && !isImg2ImgMode && (
                 <div className="mb-4 shrink-0">
                   <div className="mb-3">
-                    <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest">
                       <span>生成比例</span>
-                      <span className="text-zinc-600">{imageAspectRatio}</span>
+                      <span className="text-theme-text-placeholder">{imageAspectRatio}</span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {aspectRatioOptions.map((ratio) => (
@@ -1987,9 +1810,9 @@ Example Output:
                           type="button"
                           onClick={() => selectImageAspectRatio(ratio)}
                           disabled={imageLoading}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-widest transition-colors border ${imageAspectRatio === ratio ? "bg-amber-300/15 text-amber-200 border-amber-300/30" : "bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10"} ${imageLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-widest transition-colors border ${imageAspectRatio === ratio ? "bg-amber-300/15 text-amber-200 border-amber-300/30" : "bg-theme-bg-card text-theme-text-primary border-theme-border-strong hover:bg-theme-bg-card-hover"} ${imageLoading ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
-                          {ratio} ({aspectRatioSizeMap[ratio]})
+                          {ratio === "auto" ? "AUTO" : ratio}
                         </button>
                       ))}
                     </div>
@@ -2007,11 +1830,11 @@ Example Output:
 
               {isTxt2VideoMode ? (
                 generatedVideo ? (
-                  <div className="flex-1 relative rounded-2xl overflow-hidden border border-white/10 bg-black/40 shadow-inner min-h-0 p-2">
+                  <div className="flex-1 relative rounded-2xl overflow-hidden border border-theme-border-strong bg-theme-bg-input shadow-inner min-h-0 p-2">
                     <video src={generatedVideo} controls className="w-full h-full rounded-xl object-contain bg-black" />
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-white/5 rounded-2xl bg-black/20 relative overflow-hidden min-h-0">
+                  <div className="flex-1 flex flex-col items-center justify-center text-theme-text-muted border-2 border-dashed border-theme-border rounded-2xl bg-theme-bg-input relative overflow-hidden min-h-0">
                     <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/20 pointer-events-none"></div>
                     <Video className="w-16 h-16 mb-4 opacity-20" />
                     <p className="text-sm font-mono tracking-widest opacity-50">暂无生成视频</p>
@@ -2019,12 +1842,12 @@ Example Output:
                   </div>
                 )
               ) : generatedImagePreviewSrc ? (
-                <div className="w-full relative rounded-2xl overflow-hidden border border-white/10 bg-black/40 flex justify-center items-center shadow-inner group" style={imagePreviewStyle}>
+                <div className="w-full relative rounded-2xl overflow-hidden border border-theme-border-strong bg-theme-bg-input flex justify-center items-center shadow-inner group" style={imagePreviewStyle}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={generatedImagePreviewSrc} alt="Generated" loading="eager" referrerPolicy="no-referrer" className="w-full h-full object-contain absolute inset-0 transition-transform duration-700 group-hover:scale-105" />
                 </div>
               ) : (
-                <div className="w-full flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-white/5 rounded-2xl bg-black/20 relative overflow-hidden" style={imagePreviewStyle}>
+                <div className="w-full flex flex-col items-center justify-center text-theme-text-muted border-2 border-dashed border-theme-border rounded-2xl bg-theme-bg-input relative overflow-hidden" style={imagePreviewStyle}>
                   <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/20 pointer-events-none"></div>
                   <ImageIcon className="w-16 h-16 mb-4 opacity-20" />
                   <p className="text-sm font-mono tracking-widest opacity-50">暂无生成图片</p>
@@ -2038,15 +1861,15 @@ Example Output:
 
       {/* Sponsor Modal */}
       {showSponsor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in" onClick={() => setShowSponsor(false)}>
-          <div className="relative bg-zinc-900 border border-white/10 p-8 rounded-[2rem] shadow-2xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setShowSponsor(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-theme-overlay backdrop-blur-md p-4 animate-in fade-in" onClick={() => setShowSponsor(false)}>
+          <div className="relative bg-theme-bg-card border border-theme-border-strong p-8 rounded-[2rem] shadow-2xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowSponsor(false)} className="absolute top-4 right-4 text-theme-text-muted hover:text-theme-text-primary transition-colors">
               <X className="w-6 h-6" />
             </button>
             <div className="text-center mb-6">
               <Heart className="w-8 h-8 text-rose-500 mx-auto mb-3" />
-              <h3 className="text-2xl font-black text-white tracking-wide">赞助支持</h3>
-              <p className="text-sm text-zinc-400 mt-2 font-light">您的支持是持续迭代的动力</p>
+              <h3 className="text-2xl font-black text-theme-text-primary tracking-wide">赞助支持</h3>
+              <p className="text-sm text-theme-text-secondary mt-2 font-light">您的支持是持续迭代的动力</p>
             </div>
             <div className="bg-white p-3 rounded-2xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2056,9 +1879,9 @@ Example Output:
         </div>
       )}
       {showSponsorBoard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in" onClick={() => setShowSponsorBoard(false)}>
-          <div className="relative bg-zinc-900 border border-white/10 p-6 rounded-[2rem] shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setShowSponsorBoard(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-theme-overlay backdrop-blur-md p-4 animate-in fade-in" onClick={() => setShowSponsorBoard(false)}>
+          <div className="relative bg-theme-bg-card border border-theme-border-strong p-6 rounded-[2rem] shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowSponsorBoard(false)} className="absolute top-4 right-4 text-theme-text-muted hover:text-theme-text-primary transition-colors">
               <X className="w-6 h-6" />
             </button>
             <div className="mb-5 pr-8">
@@ -2066,14 +1889,14 @@ Example Output:
                 <Trophy className="w-5 h-5" />
                 <h3 className="text-xl font-black tracking-wide">赞赏榜</h3>
               </div>
-              <p className="text-xs text-zinc-400">排名不分先后，按时间顺序展示</p>
+              <p className="text-xs text-theme-text-secondary">排名不分先后，按时间顺序展示</p>
             </div>
             <div className="space-y-2 overflow-y-auto max-h-[62vh] pr-1">
               {sponsorBoard.map((item, index) => (
-                <div key={`${item.name}-${item.time}-${index}`} className="flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3">
+                <div key={`${item.name}-${item.time}-${index}`} className="flex items-center justify-between bg-theme-bg-card border border-theme-border-strong rounded-xl px-4 py-3">
                   <div>
-                    <p className="text-sm font-semibold text-zinc-100">{item.name}</p>
-                    <p className="text-xs text-zinc-400">{item.time}</p>
+                    <p className="text-sm font-semibold text-theme-text-primary">{item.name}</p>
+                    <p className="text-xs text-theme-text-secondary">{item.time}</p>
                   </div>
                   <span className="text-sm font-black text-amber-300">+{item.amount} 元</span>
                 </div>

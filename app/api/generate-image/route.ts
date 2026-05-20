@@ -12,9 +12,9 @@ interface ValidationResult {
   error?: { errorCode: string; errorMessage: string; errorDetail: string; shouldRetry: boolean; retryAfter?: number };
 }
 
-const DEFAULT_FREE_IMG_API_KEY = "JST8RZERNPOITTRG7GFCXDTQN3943PG6BZCJRTFV";
-const DEFAULT_BACKUP_IMG_API_KEY = "N90KLF8NOC73LUD5SWOWA5UAC9W7UPAXBLU9AGRW";
-const DEFAULT_GROK2API_KEY = process.env.GROK2API_KEY || "f5f8dc3f65454077b2fd6560";
+const DEFAULT_FREE_IMG_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
+const DEFAULT_BACKUP_IMG_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
+const DEFAULT_GROK2API_KEY = process.env.GROK2API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
 const DEFAULT_GROK2API_ENDPOINT = process.env.GROK2API_ENDPOINT || "http://124.156.219.145:8000/v1/chat/completions";
 const DEFAULT_GROK2API_MODEL_NAME = process.env.GROK2API_MODEL || "grok-imagine-image-lite";
 const DEFAULT_TXT2IMG_API_KEY = DEFAULT_GROK2API_KEY;
@@ -24,6 +24,9 @@ const DEFAULT_TXT2IMG_MODEL_NAME = DEFAULT_GROK2API_MODEL_NAME;
 const DEFAULT_IMG2IMG_API_KEY = DEFAULT_GROK2API_KEY;
 const DEFAULT_IMG2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;
 const DEFAULT_IMG2IMG_MODEL_NAME = "grok-imagine-image-edit";
+// GPT-Image-2 默认配置 - 使用独立的 API Key
+const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "f5f8dc3f65454077b2fd6560";
+const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
 
 const DEFAULT_TXT2VIDEO_API_KEY = process.env.XAI_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
 const DEFAULT_TXT2VIDEO_API_ENDPOINT = process.env.XAI_VIDEO_API_ENDPOINT || "https://api.x.ai/v1/videos/generations";
@@ -56,9 +59,11 @@ const cleanupExpiredIdempotency = () => {
 
 const normalizeEndpoint = (raw: string | undefined, fallback: string, routeKind: "image" | "video", isImg2Img?: boolean) => {
   if (!raw || typeof raw !== "string") return fallback;
-  const trimmed = raw.trim();
+  // 清理反引号、单引号、双引号和空格
+  let trimmed = raw.trim();
+  // 移除首尾的反引号、单引号、双引号
+  trimmed = trimmed.replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
   if (!trimmed) return fallback;
-  // 直接返回用户配置的端点，不做任何自动补全
   return trimmed;
 };
 
@@ -66,8 +71,17 @@ const isImagesGenerationEndpoint = (endpoint: string) => {
   try {
     const url = new URL(endpoint);
     return /\/images\/generations\/?$/i.test(url.pathname);
-  } catch {
+  } catch (_e) {
     return /\/images\/generations\/?$/i.test(endpoint);
+  }
+};
+
+const isImagesEditsEndpoint = (endpoint: string) => {
+  try {
+    const url = new URL(endpoint);
+    return /\/images\/edits\/?$/i.test(url.pathname);
+  } catch (_e) {
+    return /\/images\/edits\/?$/i.test(endpoint);
   }
 };
 
@@ -89,7 +103,7 @@ const buildVideoStatusEndpoint = (startEndpoint: string, requestId: string) => {
     const url = new URL(startEndpoint);
     url.pathname = url.pathname.replace(/\/generations\/?$/i, `/${encodedRequestId}`);
     return url.toString();
-  } catch {
+  } catch (_e) {
     return startEndpoint.replace(/\/generations\/?$/i, `/${encodedRequestId}`);
   }
 };
@@ -143,7 +157,7 @@ const validateImageUrl = (url: string): ValidationResult => {
   try {
     new URL(url);
     return { valid: true };
-  } catch {
+  } catch (_e) {
     return {
       valid: false,
       error: {
@@ -259,7 +273,7 @@ const extractImageUrlFromAny = (value: any): string | null => {
         const parsed = JSON.parse(jsonMatch[0]);
         return extractImageUrlFromAny(parsed);
       }
-    } catch {}
+    } catch (_e) {}
     return null;
   }
   if (Array.isArray(value)) {
@@ -285,12 +299,9 @@ const extractImageUrlFromAny = (value: any): string | null => {
 
 const ASPECT_RATIO_SIZES: Record<string, { width: number; height: number }> = {
   "1:1": { width: 1024, height: 1024 },
-  "4:3": { width: 1280, height: 720 }, // 映射到 grok2api 支持的最接近尺寸
-  "3:4": { width: 720, height: 1280 }, // 映射到 grok2api 支持的最接近尺寸
-  "16:9": { width: 1280, height: 720 },
-  "9:16": { width: 720, height: 1280 },
-  "3:2": { width: 1792, height: 1024 }, // 映射到 grok2api 支持的最接近尺寸
-  "2:3": { width: 1024, height: 1792 }  // 映射到 grok2api 支持的最接近尺寸
+  "3:2": { width: 1536, height: 1024 },
+  "2:3": { width: 1024, height: 1536 }
+  // "auto" 不在映射中，让模型自动决定尺寸
 };
 
 export async function POST(req: Request) {
@@ -352,22 +363,25 @@ export async function POST(req: Request) {
     const isVideo = mediaType === "video";
     const videoDuration = Number.isFinite(Number(duration)) ? Math.max(1, Math.min(15, Number(duration))) : 10;
     const isImg2Img = Boolean(image_url) && !isVideo;
-    const defaultApiKey = isVideo ? DEFAULT_TXT2VIDEO_API_KEY : (isImg2Img ? DEFAULT_IMG2IMG_API_KEY : DEFAULT_TXT2IMG_API_KEY);
-    const defaultEndpoint = isVideo ? DEFAULT_TXT2VIDEO_API_ENDPOINT : (isImg2Img ? DEFAULT_IMG2IMG_API_ENDPOINT : DEFAULT_TXT2IMG_API_ENDPOINT);
+    // GPT-Image-2 使用标准的 /v1/images/generations 端点格式
+    const isGpt2Model = modelName && isGptImage2Model(modelName);
+    const defaultApiKey = isVideo ? DEFAULT_TXT2VIDEO_API_KEY : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_KEY : (isImg2Img ? DEFAULT_IMG2IMG_API_KEY : DEFAULT_TXT2IMG_API_KEY));
+    const defaultEndpoint = isVideo ? DEFAULT_TXT2VIDEO_API_ENDPOINT : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_ENDPOINT : (isImg2Img ? DEFAULT_IMG2IMG_API_ENDPOINT : DEFAULT_TXT2IMG_API_ENDPOINT));
     const defaultModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (isImg2Img ? DEFAULT_IMG2IMG_MODEL_NAME : DEFAULT_TXT2IMG_MODEL_NAME);
 
     let finalApiKey = isVideo ? defaultApiKey : (apiKey || defaultApiKey);
-    // GPT-Image-2 使用标准的 /v1/images/generations 端点格式
-    const isGpt2Model = modelName && isGptImage2Model(modelName);
-    const finalEndpoint = isVideo
+    let finalEndpoint = isVideo
       ? defaultEndpoint
       : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img);
     const finalModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (modelName || defaultModel);
     // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
     // 但 GPT-Image-2 模式下不做强制替换（该模型支持文生图和图生图）
     const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
-    // GPT-Image-2 也使用 images/generations API 格式
-    const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint);
+    
+    // GPT-Image-2 使用 chat/completions 端点，不需要 images/generations
+    const useImagesGenerationApi = !isVideo && !isGpt2Model && isImagesGenerationEndpoint(finalEndpoint);
+    // 图生图使用 /images/edits 端点
+    const useImagesEditsApi = !isVideo && isImg2Img && (isGpt2Model || isImagesEditsEndpoint(finalEndpoint));
     
     // 调试日志：GPT-Image-2 请求参数
     if (isGpt2Model) {
@@ -456,10 +470,10 @@ export async function POST(req: Request) {
     // 构建请求，增加超时控制
     // 优化：根据不同场景设置不同超时时间
     // GPT-Image-2 模型响应较慢，增加超时到 300 秒（5分钟）
-    const isGptImage2Model = modelName && /gpt-image-2/i.test(modelName);
+    const isGpt2 = modelName && /gpt-image-2/i.test(modelName);
     const getTimeout = (isVideo: boolean, isImg2Img: boolean) => {
       if (isVideo) return VIDEO_MAX_WAIT_MS;
-      if (isGptImage2Model) return 300000; // GPT-Image-2：300秒（5分钟），模型响应较慢，文生图和图生图都适用
+      if (isGpt2) return 300000; // GPT-Image-2：300秒（5分钟），模型响应较慢，文生图和图生图都适用
       if (isImg2Img) return 60000; // 图生图：60秒
       return 45000; // 文生图：45秒
     };
@@ -547,7 +561,7 @@ export async function POST(req: Request) {
         let startData: any;
         try {
           startData = JSON.parse(startText);
-        } catch {
+        } catch (_e) {
           return respond({ error: "视频任务创建成功，但上游返回了不可解析的数据格式" }, 502);
         }
 
@@ -650,7 +664,7 @@ export async function POST(req: Request) {
           let pollData: any;
           try {
             pollData = JSON.parse(pollText);
-          } catch {
+          } catch (_e) {
             return respond({ error: "视频状态查询返回了不可解析的数据格式" }, 502);
           }
 
@@ -872,7 +886,16 @@ export async function POST(req: Request) {
       }
 
       let requestPayload: any;
-      if (useImagesGenerationApi) {
+      if (useImagesEditsApi) {
+        // /images/edits 端点格式：multipart/form-data
+        // 暂时使用 chat/completions 格式，因为大多数 API 不直接支持 edits
+        requestPayload = {
+          model: actualModel,
+          messages: messages,
+          stream: false,
+          max_tokens: 4096
+        };
+      } else if (useImagesGenerationApi) {
         requestPayload = {
           model: actualModel,
           prompt: finalPrompt,
@@ -906,7 +929,12 @@ export async function POST(req: Request) {
         requestPayload.modalities = ["video"];
         requestPayload.duration = videoDuration;
       }
-      if (aspectSize) {
+      // 图生图模式强制使用 1024x1024（API 限制）
+      if (isImg2Img && useImagesGenerationApi) {
+        requestPayload.size = "1024x1024";
+        requestPayload.width = 1024;
+        requestPayload.height = 1024;
+      } else if (aspectSize) {
         requestPayload.size = `${aspectSize.width}x${aspectSize.height}`;
         requestPayload.width = aspectSize.width;
         requestPayload.height = aspectSize.height;
@@ -996,7 +1024,7 @@ export async function POST(req: Request) {
         if (response.ok) {
           try {
             finalData = JSON.parse(responseText);
-          } catch {
+          } catch (parseError) {
             // If it's a 200 OK but invalid JSON, treat it like a 502 if we have retries left
             if (badGatewayRetryCount < maxBadGatewayRetry) {
               badGatewayRetryCount++;
@@ -1184,7 +1212,7 @@ export async function POST(req: Request) {
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        return respond({ error: isVideo ? "视频生成超时，请稍后重试" : (isGptImage2Model ? "GPT-Image-2 请求超时，模型响应较慢，请耐心等待或稍后重试" : "API 请求超时，请稍后重试") }, 504);
+        return respond({ error: isVideo ? "视频生成超时，请稍后重试" : (isGpt2 ? "GPT-Image-2 请求超时，模型响应较慢，请耐心等待或稍后重试" : "API 请求超时，请稍后重试") }, 504);
       }
       throw fetchError;
     }
