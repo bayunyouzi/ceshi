@@ -245,7 +245,7 @@ export default function AdminPage() {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-    } catch {}
+    } catch (_e) {}
   };
 
   const sidebarItems = [
