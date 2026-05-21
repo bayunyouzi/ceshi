@@ -779,32 +779,55 @@ Example Output:
         const model = imageModelName || "grok-imagine-image-lite";
         const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
         const isImagesGenEndpoint = /\/images\/generations\/?$/i.test(endpoint);
-        let payload: any;
-        if (isImagesGenEndpoint) {
-          payload = { model, prompt, n: 1, response_format: "url", size: sizeStr };
-        } else {
-          payload = {
+        const buildPayload = (withSize: boolean) => {
+          if (isImagesGenEndpoint) {
+            const p: any = { model, prompt, n: 1, response_format: "url" };
+            if (withSize) p.size = sizeStr;
+            return p;
+          }
+          const p: any = {
             model,
             messages: [{ role: "user", content: prompt }],
             stream: false,
-            max_tokens: 4096,
-            image_config: { n: 1, size: sizeStr, response_format: "b64_json" }
+            max_tokens: 4096
           };
-        }
-        const response = await fetch(endpoint, {
+          if (withSize) {
+            p.image_config = { n: 1, size: sizeStr, response_format: "b64_json" };
+          }
+          return p;
+        };
+        let response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${imageApiKey}`
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(buildPayload(true)),
           signal: controller.signal
         });
-        clearTimeout(timeoutId);
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          if (response.status === 400 && /size|image_config/i.test(errText)) {
+            response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${imageApiKey}`
+              },
+              body: JSON.stringify(buildPayload(false)),
+              signal: controller.signal
+            });
+            if (!response.ok) {
+              const errText2 = await response.text();
+              clearTimeout(timeoutId);
+              throw new Error(`API 请求失败 (${response.status}): ${errText2.substring(0, 200)}`);
+            }
+          } else {
+            clearTimeout(timeoutId);
+            throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          }
         }
+        clearTimeout(timeoutId);
         data = await response.json();
       } else {
         const token = localStorage.getItem("auth_token");
@@ -1009,33 +1032,56 @@ Example Output:
         const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
         const model = imageModelName || "grok-imagine-image-edit";
         const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
-        const payload = {
-          model,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text: promptInstruction },
-              { type: "image_url", image_url: { url: uploadedImage } }
-            ]
-          }],
-          stream: false,
-          max_tokens: 4096,
-          image_config: { n: 1, size: sizeStr, response_format: "b64_json" }
+        const buildImg2ImgPayload = (text: string, withSize: boolean) => {
+          const p: any = {
+            model,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text },
+                { type: "image_url", image_url: { url: uploadedImage } }
+              ]
+            }],
+            stream: false,
+            max_tokens: 4096
+          };
+          if (withSize) {
+            p.image_config = { n: 1, size: sizeStr, response_format: "b64_json" };
+          }
+          return p;
         };
-        const response = await fetch(endpoint, {
+        let response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${imageApiKey}`
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(buildImg2ImgPayload(promptInstruction, true)),
           signal: controller.signal
         });
-        clearTimeout(timeoutId);
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          if (response.status === 400 && /size|image_config/i.test(errText)) {
+            response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${imageApiKey}`
+              },
+              body: JSON.stringify(buildImg2ImgPayload(promptInstruction, false)),
+              signal: controller.signal
+            });
+            if (!response.ok) {
+              const errText2 = await response.text();
+              clearTimeout(timeoutId);
+              throw new Error(`API 请求失败 (${response.status}): ${errText2.substring(0, 200)}`);
+            }
+          } else {
+            clearTimeout(timeoutId);
+            throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          }
         }
+        clearTimeout(timeoutId);
         data = await response.json();
       } else {
         const token = localStorage.getItem("auth_token");
@@ -1083,7 +1129,7 @@ Example Output:
           const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
           const model = imageModelName || "grok-imagine-image-edit";
           const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
-          const retryPayload = {
+          const retryPayload: any = {
             model,
             messages: [{
               role: "user",
@@ -1093,10 +1139,10 @@ Example Output:
               ]
             }],
             stream: false,
-            max_tokens: 4096,
-            image_config: { n: 1, size: sizeStr, response_format: "b64_json" }
+            max_tokens: 4096
           };
-          const retryResponse = await fetch(endpoint, {
+          retryPayload.image_config = { n: 1, size: sizeStr, response_format: "b64_json" };
+          let retryResponse = await fetch(endpoint, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -1105,6 +1151,21 @@ Example Output:
             body: JSON.stringify(retryPayload),
             signal: retryController.signal
           });
+          if (!retryResponse.ok) {
+            const errText = await retryResponse.text();
+            if (retryResponse.status === 400 && /size|image_config/i.test(errText)) {
+              delete retryPayload.image_config;
+              retryResponse = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${imageApiKey}`
+                },
+                body: JSON.stringify(retryPayload),
+                signal: retryController.signal
+              });
+            }
+          }
           clearTimeout(retryTimeoutId);
           if (!retryResponse.ok) {
             const errText = await retryResponse.text();
@@ -1199,56 +1260,82 @@ Example Output:
         ? getVideoSystemPrompt(isSafeMode, isUncensored, hasUserInput)
         : getSystemPrompt(isAnime, isSafeMode, isUncensored, characterCount, hasUserInput);
 
-      // 改走后端代理 /api/generate，避免前端直连由于 HTTP/HTTPS 混合协议或跨域引发的 Failed to fetch
-      const token = localStorage.getItem("auth_token");
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+      const messages = [
+        {
+          role: "system",
+          content: systemPrompt
         },
-        body: JSON.stringify({
-          model: finalModel,
-          temperature: isDeepThinking ? undefined : 0.8,
-          stream: false, // 明确禁用流式输出
-          apiEndpoint: useCustomPromptConfig ? finalEndpoint : undefined,
-          apiKey: useCustomPromptConfig ? finalApiKey : undefined,
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt
-            },
-            {
-              role: "user",
-              content: userInput
-                ? `Based on the following user input, expand it into a highly detailed ${isVideoMode ? "video" : "art"} prompt following the system rules. Strictly preserve the user's core intent, subject, action, scene, style, and composition. Do not replace user requirements with your own ideas. Only add missing details to improve quality and clarity. Keep the tone ${isSafeMode ? "elegant and safe" : (isUncensored ? "explicitly erotic and NSFW" : "boldly sensual, suggestive, and cinematic (R16-R18)")} without changing user intent. You are not limited to any fixed library and should avoid repetitive food-metaphor tags unless the user requests them. User Input: "${userInput}"`
-                : `Generate a new, unique, and extremely detailed high-scale ${isVideoMode ? "video" : (isAnime ? "anime" : "realistic")} prompt. ${isSafeMode ? "Make it beautiful, elegant, and safe for work." : (isUncensored ? "Make it highly explicit, erotic, and NSFW. Push the boundaries of seduction and sexual tension. Include tags for extreme revealing clothing, highly suggestive poses, ahegao, body fluids, or even nudity if it fits the fantasy. Surprise me with extreme adult concepts." : "Make it creative with R16-R18 intensity: seductive, bold, and suggestive, with strong tension and atmosphere; avoid heavy fetish, gore, and explicit sex-act descriptions, and avoid repetitive cream/cake-style metaphors.")}`
-            }
-          ]
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        let errData;
-        const errTextRaw = await response.text();
-        try {
-          errData = JSON.parse(errTextRaw);
-        } catch (_e) {
-          errData = { error: errTextRaw };
+        {
+          role: "user",
+          content: userInput
+            ? `Based on the following user input, expand it into a highly detailed ${isVideoMode ? "video" : "art"} prompt following the system rules. Strictly preserve the user's core intent, subject, action, scene, style, and composition. Do not replace user requirements with your own ideas. Only add missing details to improve quality and clarity. Keep the tone ${isSafeMode ? "elegant and safe" : (isUncensored ? "explicitly erotic and NSFW" : "boldly sensual, suggestive, and cinematic (R16-R18)")} without changing user intent. You are not limited to any fixed library and should avoid repetitive food-metaphor tags unless the user requests them. User Input: "${userInput}"`
+            : `Generate a new, unique, and extremely detailed high-scale ${isVideoMode ? "video" : (isAnime ? "anime" : "realistic")} prompt. ${isSafeMode ? "Make it beautiful, elegant, and safe for work." : (isUncensored ? "Make it highly explicit, erotic, and NSFW. Push the boundaries of seduction and sexual tension. Include tags for extreme revealing clothing, highly suggestive poses, ahegao, body fluids, or even nudity if it fits the fantasy. Surprise me with extreme adult concepts." : "Make it creative with R16-R18 intensity: seductive, bold, and suggestive, with strong tension and atmosphere; avoid heavy fetish, gore, and explicit sex-act descriptions, and avoid repetitive cream/cake-style metaphors.")}`
         }
-        throw new Error(errData.error?.message || errData.error || `API 请求失败: ${response.status}`);
-      }
+      ];
 
-      const rawText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(rawText);
-      } catch (e) {
-        console.error("Failed to parse API response:", rawText);
-        throw new Error("上游服务返回了异常的数据格式，请稍后再试。");
+      let data: any;
+
+      if (useCustomPromptConfig && finalApiKey && finalEndpoint) {
+        const endpoint = finalEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${finalApiKey}`
+          },
+          body: JSON.stringify({
+            model: finalModel,
+            messages,
+            temperature: isDeepThinking ? undefined : 0.8,
+            stream: false
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`提示词API请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+        }
+        data = await response.json();
+      } else {
+        const token = localStorage.getItem("auth_token");
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            model: finalModel,
+            temperature: isDeepThinking ? undefined : 0.8,
+            stream: false,
+            apiEndpoint: useCustomPromptConfig ? finalEndpoint : undefined,
+            apiKey: useCustomPromptConfig ? finalApiKey : undefined,
+            messages
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          let errData;
+          const errTextRaw = await response.text();
+          try {
+            errData = JSON.parse(errTextRaw);
+          } catch (_e) {
+            errData = { error: errTextRaw };
+          }
+          throw new Error(errData.error?.message || errData.error || `API 请求失败: ${response.status}`);
+        }
+
+        const rawText = await response.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          console.error("Failed to parse API response:", rawText);
+          throw new Error("上游服务返回了异常的数据格式，请稍后再试。");
+        }
       }
       
       const content = data?.choices?.[0]?.message?.content || "";

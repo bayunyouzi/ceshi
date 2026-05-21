@@ -654,32 +654,55 @@ Example Output:
         const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
         const model = imageModelName || "grok-imagine-image-lite";
         const isImagesGenEndpoint = /\/images\/generations\/?$/i.test(endpoint);
-        let payload: any;
-        if (isImagesGenEndpoint) {
-          payload = { model, prompt, n: 1, response_format: "url", size: "1024x1024" };
-        } else {
-          payload = {
+        const buildPayload = (withSize: boolean) => {
+          if (isImagesGenEndpoint) {
+            const p: any = { model, prompt, n: 1, response_format: "url" };
+            if (withSize) p.size = "1024x1024";
+            return p;
+          }
+          const p: any = {
             model,
             messages: [{ role: "user", content: prompt }],
             stream: false,
-            max_tokens: 4096,
-            image_config: { n: 1, size: "1024x1024", response_format: "b64_json" }
+            max_tokens: 4096
           };
-        }
-        const response = await fetch(endpoint, {
+          if (withSize) {
+            p.image_config = { n: 1, size: "1024x1024", response_format: "b64_json" };
+          }
+          return p;
+        };
+        let response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${imageApiKey}`
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(buildPayload(true)),
           signal: controller.signal
         });
-        clearTimeout(timeoutId);
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          if (response.status === 400 && /size|image_config/i.test(errText)) {
+            response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${imageApiKey}`
+              },
+              body: JSON.stringify(buildPayload(false)),
+              signal: controller.signal
+            });
+            if (!response.ok) {
+              const errText2 = await response.text();
+              clearTimeout(timeoutId);
+              throw new Error(`API 请求失败 (${response.status}): ${errText2.substring(0, 200)}`);
+            }
+          } else {
+            clearTimeout(timeoutId);
+            throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          }
         }
+        clearTimeout(timeoutId);
         data = await response.json();
       } else {
         const token = localStorage.getItem("auth_token");
@@ -944,33 +967,56 @@ The result must be **sharp, crystal-clear, and professional product photography 
       if (useFrontendDirect) {
         const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
         const model = imageModelName || "grok-imagine-image-edit";
-        const payload = {
-          model,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text: promptInstruction },
-              { type: "image_url", image_url: { url: uploadedImage } }
-            ]
-          }],
-          stream: false,
-          max_tokens: 4096,
-          image_config: { n: 1, size: "1024x1024", response_format: "b64_json" }
+        const buildImg2ImgPayload = (text: string, withSize: boolean) => {
+          const p: any = {
+            model,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text },
+                { type: "image_url", image_url: { url: uploadedImage } }
+              ]
+            }],
+            stream: false,
+            max_tokens: 4096
+          };
+          if (withSize) {
+            p.image_config = { n: 1, size: "1024x1024", response_format: "b64_json" };
+          }
+          return p;
         };
-        const response = await fetch(endpoint, {
+        let response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${imageApiKey}`
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(buildImg2ImgPayload(promptInstruction, true)),
           signal: controller.signal
         });
-        clearTimeout(timeoutId);
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          if (response.status === 400 && /size|image_config/i.test(errText)) {
+            response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${imageApiKey}`
+              },
+              body: JSON.stringify(buildImg2ImgPayload(promptInstruction, false)),
+              signal: controller.signal
+            });
+            if (!response.ok) {
+              const errText2 = await response.text();
+              clearTimeout(timeoutId);
+              throw new Error(`API 请求失败 (${response.status}): ${errText2.substring(0, 200)}`);
+            }
+          } else {
+            clearTimeout(timeoutId);
+            throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+          }
         }
+        clearTimeout(timeoutId);
         data = await response.json();
       } else {
         const token = localStorage.getItem("auth_token");
@@ -1014,7 +1060,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
         if (useFrontendDirect) {
           const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
           const model = imageModelName || "grok-imagine-image-edit";
-          const retryPayload = {
+          const retryPayload: any = {
             model,
             messages: [{
               role: "user",
@@ -1024,10 +1070,10 @@ The result must be **sharp, crystal-clear, and professional product photography 
               ]
             }],
             stream: false,
-            max_tokens: 4096,
-            image_config: { n: 1, size: "1024x1024", response_format: "b64_json" }
+            max_tokens: 4096
           };
-          const retryResponse = await fetch(endpoint, {
+          retryPayload.image_config = { n: 1, size: "1024x1024", response_format: "b64_json" };
+          let retryResponse = await fetch(endpoint, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -1036,6 +1082,21 @@ The result must be **sharp, crystal-clear, and professional product photography 
             body: JSON.stringify(retryPayload),
             signal: retryController.signal
           });
+          if (!retryResponse.ok) {
+            const errText = await retryResponse.text();
+            if (retryResponse.status === 400 && /size|image_config/i.test(errText)) {
+              delete retryPayload.image_config;
+              retryResponse = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${imageApiKey}`
+                },
+                body: JSON.stringify(retryPayload),
+                signal: retryController.signal
+              });
+            }
+          }
           clearTimeout(retryTimeoutId);
           if (!retryResponse.ok) {
             const errText = await retryResponse.text();
