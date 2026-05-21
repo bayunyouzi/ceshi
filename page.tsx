@@ -648,29 +648,60 @@ Example Output:
     const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 180000 : 60000);
     
     try {
-      const token = localStorage.getItem("auth_token");
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ 
-          prompt,
-          // 将自定义配置传给后端 (使用图片生成专用的配置)
-          apiKey: isGptImage2Mode ? GPTIMAGE2_API_KEY : (imageApiKey || undefined),
-          apiEndpoint: isGptImage2Mode ? GPTIMAGE2_API_ENDPOINT : (imageApiEndpoint || undefined),
-          modelName: isGptImage2Mode ? GPTIMAGE2_MODEL_NAME : (imageModelName || undefined)
-        }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
+      let data: any;
+
+      if (imageApiKey && imageApiEndpoint && !isGptImage2Mode) {
+        const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const model = imageModelName || "grok-imagine-image-lite";
+        const isImagesGenEndpoint = /\/images\/generations\/?$/i.test(endpoint);
+        let payload: any;
+        if (isImagesGenEndpoint) {
+          payload = { model, prompt, n: 1, response_format: "url", size: "1024x1024" };
+        } else {
+          payload = {
+            model,
+            messages: [{ role: "user", content: prompt }],
+            stream: false,
+            max_tokens: 4096,
+            image_config: { n: 1, size: "1024x1024", response_format: "b64_json" }
+          };
+        }
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${imageApiKey}`
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+        }
+        data = await response.json();
+      } else {
+        const token = localStorage.getItem("auth_token");
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ 
+            prompt,
+            apiKey: isGptImage2Mode ? GPTIMAGE2_API_KEY : (imageApiKey || undefined),
+            apiEndpoint: isGptImage2Mode ? GPTIMAGE2_API_ENDPOINT : (imageApiEndpoint || undefined),
+            modelName: isGptImage2Mode ? GPTIMAGE2_MODEL_NAME : (imageModelName || undefined)
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
       }
 
       // GPT-Image-2 专用处理
@@ -679,7 +710,6 @@ Example Output:
         if (gptImage2Url) {
           setGeneratedImage(gptImage2Url);
           setImageMeta({ displayModel: "gpt-image-2" });
-          // 扣除 GPT-Image-2 次数
           const newCount = gptImage2Remaining - 1;
           setGptImage2Remaining(newCount);
           localStorage.setItem("gpt_image2_count", newCount.toString());
@@ -908,29 +938,62 @@ The result must be **sharp, crystal-clear, and professional product photography 
         promptInstruction += `\n\nUser Additional Request: ${img2ImgInput}`;
       }
 
-      const token = localStorage.getItem("auth_token");
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ 
-          prompt: promptInstruction,
-          image_url: uploadedImage,
-          apiKey: imageApiKey || undefined,
-          apiEndpoint: imageApiEndpoint || undefined,
-          modelName: imageModelName || "grok-imagine-1.0"
-        }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
+      const useFrontendDirect = imageApiKey && imageApiEndpoint;
+      let data: any;
 
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
+      if (useFrontendDirect) {
+        const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const model = imageModelName || "grok-imagine-image-edit";
+        const payload = {
+          model,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: promptInstruction },
+              { type: "image_url", image_url: { url: uploadedImage } }
+            ]
+          }],
+          stream: false,
+          max_tokens: 4096,
+          image_config: { n: 1, size: "1024x1024", response_format: "b64_json" }
+        };
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${imageApiKey}`
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+        }
+        data = await response.json();
+      } else {
+        const token = localStorage.getItem("auth_token");
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ 
+            prompt: promptInstruction,
+            image_url: uploadedImage,
+            apiKey: imageApiKey || undefined,
+            apiEndpoint: imageApiEndpoint || undefined,
+            modelName: imageModelName || "grok-imagine-1.0"
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
       }
 
       const extractedImage = extractImageUrlFromAny(data);
@@ -943,27 +1006,66 @@ The result must be **sharp, crystal-clear, and professional product photography 
 
       const content = data?.choices?.[0]?.message?.content;
       if (typeof content === "string" && content.length > 0) {
+        const retryPrompt = `Generate one image only. Keep character identity strictly consistent with the reference image: same face, hairstyle, outfit, body proportions, pose and camera framing. Do not drift style away from reference. Use this recovered guidance as secondary hint: ${content}. Original transformation request: ${promptInstruction}`;
         const retryController = new AbortController();
         const retryTimeoutId = setTimeout(() => retryController.abort(), 90000);
+        let retryData: any;
 
-        const retryToken = localStorage.getItem("auth_token");
-        const retryResponse = await fetch("/api/generate-image", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(retryToken ? { "Authorization": `Bearer ${retryToken}` } : {})
-          },
-          body: JSON.stringify({
-            prompt: `Generate one image only. Keep character identity strictly consistent with the reference image: same face, hairstyle, outfit, body proportions, pose and camera framing. Do not drift style away from reference. Use this recovered guidance as secondary hint: ${content}. Original transformation request: ${promptInstruction}`,
-            image_url: uploadedImage,
-            apiKey: imageApiKey || undefined,
-            apiEndpoint: imageApiEndpoint || undefined,
-            modelName: imageModelName || "grok-imagine-1.0"
-          }),
-          signal: retryController.signal
-        });
-        clearTimeout(retryTimeoutId);
-        const retryData = await retryResponse.json();
+        if (useFrontendDirect) {
+          const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+          const model = imageModelName || "grok-imagine-image-edit";
+          const retryPayload = {
+            model,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: retryPrompt },
+                { type: "image_url", image_url: { url: uploadedImage } }
+              ]
+            }],
+            stream: false,
+            max_tokens: 4096,
+            image_config: { n: 1, size: "1024x1024", response_format: "b64_json" }
+          };
+          const retryResponse = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${imageApiKey}`
+            },
+            body: JSON.stringify(retryPayload),
+            signal: retryController.signal
+          });
+          clearTimeout(retryTimeoutId);
+          if (!retryResponse.ok) {
+            const errText = await retryResponse.text();
+            throw new Error(`重试请求失败 (${retryResponse.status}): ${errText.substring(0, 200)}`);
+          }
+          retryData = await retryResponse.json();
+        } else {
+          const retryToken = localStorage.getItem("auth_token");
+          const retryResponse = await fetch("/api/generate-image", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(retryToken ? { "Authorization": `Bearer ${retryToken}` } : {})
+            },
+            body: JSON.stringify({
+              prompt: retryPrompt,
+              image_url: uploadedImage,
+              apiKey: imageApiKey || undefined,
+              apiEndpoint: imageApiEndpoint || undefined,
+              modelName: imageModelName || "grok-imagine-1.0"
+            }),
+            signal: retryController.signal
+          });
+          clearTimeout(retryTimeoutId);
+          retryData = await retryResponse.json();
+          if (retryData.error) {
+            throw new Error(retryData.error);
+          }
+        }
+
         const retryImage = extractImageUrlFromAny(retryData);
         if (retryImage) {
           setGeneratedImage(retryImage);

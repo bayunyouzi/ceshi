@@ -772,32 +772,63 @@ Example Output:
     const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 110000);
     
     try {
-      const token = localStorage.getItem("auth_token");
-      
-      // 所有请求统一走后端服务器代理
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": buildImageIdempotencyKey(prompt),
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ 
-          prompt,
-          aspectRatio: imageAspectRatio,
-          apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
-          apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
-          modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
-        }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
+      let data: any;
+
+      if (imageApiKey && imageApiEndpoint && !isGptImage2Mode) {
+        const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const model = imageModelName || "grok-imagine-image-lite";
+        const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
+        const isImagesGenEndpoint = /\/images\/generations\/?$/i.test(endpoint);
+        let payload: any;
+        if (isImagesGenEndpoint) {
+          payload = { model, prompt, n: 1, response_format: "url", size: sizeStr };
+        } else {
+          payload = {
+            model,
+            messages: [{ role: "user", content: prompt }],
+            stream: false,
+            max_tokens: 4096,
+            image_config: { n: 1, size: sizeStr, response_format: "b64_json" }
+          };
+        }
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${imageApiKey}`
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+        }
+        data = await response.json();
+      } else {
+        const token = localStorage.getItem("auth_token");
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": buildImageIdempotencyKey(prompt),
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ 
+            prompt,
+            aspectRatio: imageAspectRatio,
+            apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
+            apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
+            modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
       }
 
       const extractedImage = extractImageUrlFromAny(data);
@@ -971,35 +1002,66 @@ Example Output:
       lastImg2ImgFingerprintRef.current = img2imgFingerprint;
       lastImg2ImgAtRef.current = now;
 
-      const token = localStorage.getItem("auth_token");
-      
-      // 所有请求统一走后端服务器代理
-      const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
+      const useFrontendDirect = imageApiKey && imageApiEndpoint && !isGptImage2Mode;
+      let data: any;
 
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": img2imgPrimaryKey,
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ 
-          prompt: promptInstruction,
-          image_url: uploadedImage,
-          aspectRatio: imageAspectRatio,
-          apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
-          apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
-          modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
-        }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
+      if (useFrontendDirect) {
+        const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const model = imageModelName || "grok-imagine-image-edit";
+        const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
+        const payload = {
+          model,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: promptInstruction },
+              { type: "image_url", image_url: { url: uploadedImage } }
+            ]
+          }],
+          stream: false,
+          max_tokens: 4096,
+          image_config: { n: 1, size: sizeStr, response_format: "b64_json" }
+        };
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${imageApiKey}`
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
+        }
+        data = await response.json();
+      } else {
+        const token = localStorage.getItem("auth_token");
+        const img2imgPrimaryKey = buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed, phase: "primary" });
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": img2imgPrimaryKey,
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ 
+            prompt: promptInstruction,
+            image_url: uploadedImage,
+            aspectRatio: imageAspectRatio,
+            apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
+            apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
+            modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
       }
 
       const extractedImage = extractImageUrlFromAny(data);
@@ -1013,30 +1075,69 @@ Example Output:
       const content = data?.choices?.[0]?.message?.content;
       if (typeof content === "string" && content.length > 0) {
         const retryPrompt = `Generate one image only. Keep character identity strictly consistent with the reference image: same face, hairstyle, outfit, body proportions, pose and camera framing. Do not drift style away from reference. Use this recovered guidance as secondary hint: ${content}. Original transformation request: ${promptInstruction}`;
-        const img2imgRetryKey = buildImageIdempotencyKey(retryPrompt, { kind: "img2img", imageSeed, phase: "retry" });
         const retryController = new AbortController();
         const retryTimeoutId = setTimeout(() => retryController.abort(), isGptImage2Mode ? 310000 : 90000);
+        let retryData: any;
 
-        const retryToken = localStorage.getItem("auth_token");
-        const retryResponse = await fetch("/api/generate-image", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": img2imgRetryKey,
-            ...(retryToken ? { "Authorization": `Bearer ${retryToken}` } : {})
-          },
-          body: JSON.stringify({
-            prompt: retryPrompt,
-            image_url: uploadedImage,
-            aspectRatio: imageAspectRatio,
-            apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
-            apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
-            modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
-          }),
-          signal: retryController.signal
-        });
-        clearTimeout(retryTimeoutId);
-        const retryData = await retryResponse.json();
+        if (useFrontendDirect) {
+          const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+          const model = imageModelName || "grok-imagine-image-edit";
+          const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
+          const retryPayload = {
+            model,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: retryPrompt },
+                { type: "image_url", image_url: { url: uploadedImage } }
+              ]
+            }],
+            stream: false,
+            max_tokens: 4096,
+            image_config: { n: 1, size: sizeStr, response_format: "b64_json" }
+          };
+          const retryResponse = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${imageApiKey}`
+            },
+            body: JSON.stringify(retryPayload),
+            signal: retryController.signal
+          });
+          clearTimeout(retryTimeoutId);
+          if (!retryResponse.ok) {
+            const errText = await retryResponse.text();
+            throw new Error(`重试请求失败 (${retryResponse.status}): ${errText.substring(0, 200)}`);
+          }
+          retryData = await retryResponse.json();
+        } else {
+          const img2imgRetryKey = buildImageIdempotencyKey(retryPrompt, { kind: "img2img", imageSeed, phase: "retry" });
+          const retryToken = localStorage.getItem("auth_token");
+          const retryResponse = await fetch("/api/generate-image", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": img2imgRetryKey,
+              ...(retryToken ? { "Authorization": `Bearer ${retryToken}` } : {})
+            },
+            body: JSON.stringify({
+              prompt: retryPrompt,
+              image_url: uploadedImage,
+              aspectRatio: imageAspectRatio,
+              apiKey: isGptImage2Mode ? GPT_IMAGE_2_API_KEY : (imageApiKey || undefined),
+              apiEndpoint: isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : (imageApiEndpoint || undefined),
+              modelName: isGptImage2Mode ? GPT_IMAGE_2_MODEL : (imageModelName || undefined)
+            }),
+            signal: retryController.signal
+          });
+          clearTimeout(retryTimeoutId);
+          retryData = await retryResponse.json();
+          if (retryData.error) {
+            throw new Error(retryData.error);
+          }
+        }
+
         const retryImage = extractImageUrlFromAny(retryData);
         if (retryImage) {
           setGeneratedImage(retryImage);
