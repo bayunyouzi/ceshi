@@ -708,16 +708,21 @@ Example Output:
     modelChanged: Boolean(value?.modelChanged)
   });
 
-  // 修复 Base64 图片在 Chrome 中点击"查看原图"变成 about:blank 的问题
   const handleViewMedia = (url: string, isVideo: boolean) => {
     if (!url) return;
-    if (url.startsWith('data:image/')) {
-      const win = window.open();
-      if (win) {
-        win.document.write(`<iframe src="${url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-        win.document.body.style.margin = '0';
-        win.document.title = 'Image Preview';
+    if (url.startsWith('data:')) {
+      const [header, base64Data] = url.split(',');
+      const mimeMatch = header.match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+      const binary = atob(base64Data);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
       }
+      const blob = new Blob([array], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     } else {
       window.open(url, '_blank', 'noreferrer');
     }
@@ -1791,7 +1796,7 @@ Example Output:
                   {isTxt2VideoMode ? "视频预览 / Preview" : "出图预览 / Preview"}
                 </span>
                 {(isTxt2VideoMode ? generatedVideo : generatedImage) && (
-                  <button onClick={() => handleViewMedia((isTxt2VideoMode ? generatedVideo : generatedImagePreviewSrc) || '', isTxt2VideoMode)} className="text-theme-text-secondary hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
+                  <button onClick={() => handleViewMedia((isTxt2VideoMode ? generatedVideo : generatedImage) || '', isTxt2VideoMode)} className="text-theme-text-secondary hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
                     {isTxt2VideoMode ? "查看视频 ↗" : "查看原图 ↗"}
                   </button>
                 )}
