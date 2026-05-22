@@ -200,20 +200,11 @@ export default function Home() {
     } catch (_e) {}
   };
 
-  // GPT-Image-2 模型切换
   const toggleGptImage2Mode = () => {
     const newState = !isGptImage2Mode;
     setIsGptImage2Mode(newState);
     const scope = getSettingScope();
     localStorage.setItem(`gpt_image2_mode_${scope}`, String(newState));
-    if (!newState) {
-      setImageApiKey("");
-      setImageApiEndpoint("");
-      setImageModelName("");
-      localStorage.removeItem(`image_gen_api_key_${scope}`);
-      localStorage.removeItem(`image_gen_api_endpoint_${scope}`);
-      localStorage.removeItem(`image_gen_model_name_${scope}`);
-    }
   };
 
   const getChinaDateKey = () =>
@@ -253,15 +244,14 @@ export default function Home() {
       setIsGptImage2Mode(true);
     }
 
-    // 加载图片生成配置（仅在 GPT 模式开启时加载，避免残留凭证干扰 Grok）
     const savedImageKey = readSetting(scope, "image_gen_api_key");
     const savedImageEndpoint = readSetting(scope, "image_gen_api_endpoint");
     const savedImageModel = readSetting(scope, "image_gen_model_name");
     const savedAspectRatio = readSetting(scope, "image_aspect_ratio");
 
-    if (isGptMode && savedImageKey) setImageApiKey(savedImageKey);
-    if (isGptMode && savedImageEndpoint) setImageApiEndpoint(savedImageEndpoint);
-    if (isGptMode && savedImageModel) {
+    if (savedImageKey) setImageApiKey(savedImageKey);
+    if (savedImageEndpoint) setImageApiEndpoint(savedImageEndpoint);
+    if (savedImageModel) {
       const normalizedImageModel =
         ["gemini-2.5-flash-image", "grok-4.1-image"].includes(savedImageModel)
           ? "grok-imagine-1.0"
@@ -272,10 +262,6 @@ export default function Home() {
       if (normalizedImageModel !== savedImageModel) {
         localStorage.setItem(`image_gen_model_name_${scope}`, normalizedImageModel);
       }
-    } else if (!isGptMode) {
-      localStorage.removeItem(`image_gen_api_key_${scope}`);
-      localStorage.removeItem(`image_gen_api_endpoint_${scope}`);
-      localStorage.removeItem(`image_gen_model_name_${scope}`);
     }
     if (aspectRatioOptions.includes(savedAspectRatio as any)) {
       setImageAspectRatio(savedAspectRatio as any);
@@ -757,8 +743,7 @@ Example Output:
     }
     lastImagePromptRef.current = normalizedPrompt;
     lastImagePromptAtRef.current = now;
-    // 如果没有配置自定义 Image API Key，才进行次数检查
-    if (!imageApiKey) {
+    if (!(imageApiKey && imageApiEndpoint)) {
       if (!checkLimit('image')) return;
     }
     imageRequestLockRef.current = true;
@@ -858,7 +843,7 @@ Example Output:
       if (extractedImage) {
         setGeneratedImage(extractedImage);
         setImageMeta(readImageMeta(data));
-        if (!imageApiKey) deductLimit('image');
+        if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
         return;
       }
 
@@ -996,8 +981,7 @@ Example Output:
       return;
     }
 
-    // 检查是否配置了生图 API
-    if (!imageApiKey && !checkLimit('image')) return;
+    if (!(imageApiKey && imageApiEndpoint) && !checkLimit('image')) return;
     imageRequestLockRef.current = true;
 
     setImageLoading(true);
@@ -1114,7 +1098,7 @@ Example Output:
       if (extractedImage) {
         setGeneratedImage(extractedImage);
         setImageMeta(readImageMeta(data));
-        if (!imageApiKey) deductLimit('image');
+        if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
         return;
       }
 
@@ -1203,7 +1187,7 @@ Example Output:
         if (retryImage) {
           setGeneratedImage(retryImage);
           setImageMeta(readImageMeta(retryData));
-          if (!imageApiKey) deductLimit('image');
+          if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
           return;
         }
         throw new Error(`生成失败，模型未能返回图片链接，仅返回了文本: ${content.substring(0, 100)}...`);
