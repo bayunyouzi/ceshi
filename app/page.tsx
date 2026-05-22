@@ -194,6 +194,24 @@ export default function Home() {
     return localStorage.getItem(`${key}_${scope}`) ?? localStorage.getItem(key) ?? "";
   };
 
+  const cleanCustomEndpoint = (value: string) => value.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+
+  const validateCustomImageEndpoint = (endpoint: string) => {
+    if (!/^https?:\/\//i.test(endpoint)) {
+      throw new Error("请填写完整的自定义生图接口地址，必须以 http:// 或 https:// 开头");
+    }
+    try {
+      const url = new URL(endpoint);
+      const path = url.pathname.replace(/\/+$/, "").toLowerCase();
+      if (!path || path === "/v1") {
+        throw new Error("请填写完整的自定义生图接口地址，例如以 /images/generations 或 /chat/completions 结尾，系统不会自动补全路径");
+      }
+    } catch (err: any) {
+      if (err?.message?.includes("自定义生图接口地址")) throw err;
+      throw new Error("自定义生图接口地址格式不正确，请填写完整 URL");
+    }
+  };
+
   const saveSetting = (scope: string, key: string, value: string) => {
     try {
       localStorage.setItem(`${key}_${scope}`, value);
@@ -604,6 +622,8 @@ Example Output:
       if (urlMatch) return urlMatch[1].replace(/[.,]$/, "");
       const dataUriMatch = text.match(/(data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+)/);
       if (dataUriMatch) return dataUriMatch[1];
+      const base64Match = text.match(/(?:base64|b64_json)["'`\s:=]+([a-zA-Z0-9+/]{1000,}={0,2})/i);
+      if (base64Match) return `data:image/png;base64,${base64Match[1]}`;
       
       // Fallback: Check if the string itself is a raw base64 string
       if (text.length > 1000 && !text.includes(' ') && /^[a-zA-Z0-9+/]+={0,2}$/.test(text.substring(0, 100))) {
@@ -760,7 +780,8 @@ Example Output:
       let data: any;
 
       if (imageApiKey && imageApiEndpoint && !isGptImage2Mode) {
-        const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const endpoint = cleanCustomEndpoint(imageApiEndpoint);
+        validateCustomImageEndpoint(endpoint);
         const model = imageModelName || "grok-imagine-image-lite";
         const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
         const isImagesGenEndpoint = /\/images\/generations\/?$/i.test(endpoint);
@@ -869,6 +890,8 @@ Example Output:
         errMsg.includes("Moderated")
       ) {
         displayMsg = "提示词触发安全审查，请尝试修改内容或开启安全模式";
+      } else if (errMsg.includes("Failed to fetch")) {
+        displayMsg = "浏览器无法直连该自定义生图接口，可能是接口地址不完整、服务未开启跨域访问，或网络拦截。请填写完整路径，例如 https://ai.gitee.com/v1/images/generations；系统不会自动补全用户自定义 API。";
       } else if (errMsg.includes("500") || errMsg.includes("服务暂时不可用")) {
         displayMsg = "图片生成服务暂时不可用，请稍后重试";
       } else if (errMsg.includes("429") || errMsg.includes("请求过于频繁")) {
@@ -1013,7 +1036,8 @@ Example Output:
       let data: any;
 
       if (useFrontendDirect) {
-        const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+        const endpoint = cleanCustomEndpoint(imageApiEndpoint);
+        validateCustomImageEndpoint(endpoint);
         const model = imageModelName || "grok-imagine-image-edit";
         const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
         const buildImg2ImgPayload = (text: string, withSize: boolean) => {
@@ -1110,7 +1134,8 @@ Example Output:
         let retryData: any;
 
         if (useFrontendDirect) {
-          const endpoint = imageApiEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
+          const endpoint = cleanCustomEndpoint(imageApiEndpoint);
+          validateCustomImageEndpoint(endpoint);
           const model = imageModelName || "grok-imagine-image-edit";
           const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
           const retryPayload: any = {
@@ -1200,8 +1225,8 @@ Example Output:
       const msg = err.message || "生成图片失败，请稍后重试";
       if (err.name === "AbortError") {
         setError("请求超时，图像处理时间过长，请稍后重试");
-      } else if (msg.includes("content-moderated") || msg.includes("Moderated")) {
-        setError("内容触发安全审查，请尝试开启安全模式或修改提示词");
+      } else if (msg.includes("Failed to fetch")) {
+        setError("浏览器无法直连该自定义生图接口，可能是接口地址不完整、服务未开启跨域访问，或网络拦截。请填写完整路径，例如 https://ai.gitee.com/v1/images/generations；系统不会自动补全用户自定义 API。");
       } else if (msg.includes("500") || msg.includes("服务暂时不可用")) {
         setError("图片生成服务暂时不可用，请稍后重试");
       } else if (msg.includes("429") || msg.includes("请求过于频繁")) {
@@ -1637,7 +1662,7 @@ Example Output:
                 </h3>
                 <p className="text-xs text-theme-text-muted">用于实际生成图片。<span className="text-rose-400">填入自定义 Key 解除限制。</span></p>
                 <div className="space-y-3">
-                  <input type="text" value={imageApiEndpoint} onChange={(e) => setImageApiEndpoint(e.target.value)} placeholder="接口地址（如 https://api...）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
+                  <input type="text" value={imageApiEndpoint} onChange={(e) => setImageApiEndpoint(e.target.value)} placeholder="完整接口地址，如 https://api.../v1/images/generations" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
                   <input type="text" value={imageModelName} onChange={(e) => setImageModelName(e.target.value)} placeholder="模型名称（如 dall-e-3）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
                   <input type="password" value={imageApiKey} onChange={(e) => setImageApiKey(e.target.value)} placeholder="密钥（sk-...）" className="w-full bg-theme-bg-input border border-theme-border rounded-xl px-4 py-3 text-sm focus:border-rose-500 outline-none transition-colors" />
                 </div>
