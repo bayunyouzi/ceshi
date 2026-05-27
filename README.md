@@ -1,6 +1,6 @@
 # AI Creative Prompt Assistant 
 
-This is a **Next.js-based AI Prompt Generation Tool**.
+This is a **Next.js-based AI Prompt Generation Tool**. 
 It helps users create highly detailed, high-quality descriptive prompts for creative writing and digital art generation. It supports custom API endpoints (BYOK - Bring Your Own Key).
 
 ## ✨ Features
