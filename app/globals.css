@@ -25,6 +25,8 @@
   --theme-shadow-btn: rgba(255, 255, 255, 0.15);
   --theme-scroll-thumb: rgba(255, 255, 255, 0.1);
   --theme-code-bg: rgba(0, 0, 0, 0.4);
+  --theme-prompt-positive: #c7d2fe;
+  --theme-prompt-negative: #fecdd3;
 }
 
 html.light {
@@ -50,6 +52,8 @@ html.light {
   --theme-shadow-btn: rgba(0, 0, 0, 0.1);
   --theme-scroll-thumb: rgba(0, 0, 0, 0.2);
   --theme-code-bg: rgba(0, 0, 0, 0.04);
+  --theme-prompt-positive: #3730a3;
+  --theme-prompt-negative: #9f1239;
 }
 
 html.light body {

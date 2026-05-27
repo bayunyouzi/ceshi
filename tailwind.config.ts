@@ -30,6 +30,16 @@ const config: Config = {
           'border-accent': 'var(--theme-border-accent)',
           overlay: 'var(--theme-overlay)',
           'grid-line': 'var(--theme-grid-line)',
+          'glow-indigo': 'var(--theme-glow-indigo)',
+          'glow-rose': 'var(--theme-glow-rose)',
+          'glow-blend': 'var(--theme-glow-blend)',
+          'hero-from': 'var(--theme-hero-from)',
+          'hero-to': 'var(--theme-hero-to)',
+          'shadow-btn': 'var(--theme-shadow-btn)',
+          'scroll-thumb': 'var(--theme-scroll-thumb)',
+          'code-bg': 'var(--theme-code-bg)',
+          'prompt-positive': 'var(--theme-prompt-positive)',
+          'prompt-negative': 'var(--theme-prompt-negative)',
         }
       }
     },
