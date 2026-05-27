@@ -15,7 +15,7 @@ interface ValidationResult {
 const DEFAULT_FREE_IMG_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
 const DEFAULT_BACKUP_IMG_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
 const DEFAULT_GROK2API_KEY = process.env.GROK2API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-const DEFAULT_GROK2API_ENDPOINT = process.env.GROK2API_ENDPOINT || "http://124.156.219.145:8000/v1/chat/completions";
+const DEFAULT_GROK2API_ENDPOINT = process.env.GROK2API_ENDPOINT || "http://bayunzi.shop/v1";
 const DEFAULT_GROK2API_MODEL_NAME = process.env.GROK2API_MODEL || "grok-imagine-image-lite";
 const DEFAULT_TXT2IMG_API_KEY = DEFAULT_GROK2API_KEY;
 const DEFAULT_TXT2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;

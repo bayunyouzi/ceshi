@@ -16,7 +16,7 @@ export default function Home() {
   const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
   const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
   const FRONTEND_IMG_API_KEY = process.env.NEXT_PUBLIC_IMG_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-  const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "http://124.156.219.145:8000/v1/chat/completions";
+  const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "http://bayunzi.shop/v1";
   const FRONTEND_IMG_MODEL_NAME = process.env.NEXT_PUBLIC_IMG_MODEL_NAME || "grok-imagine-image-lite";
   const FRONTEND_VIDEO_API_KEY = process.env.NEXT_PUBLIC_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
   const FRONTEND_VIDEO_API_ENDPOINT = process.env.NEXT_PUBLIC_VIDEO_API_ENDPOINT || "https://api.x.ai/v1/videos/generations";

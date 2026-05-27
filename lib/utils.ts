@@ -41,7 +41,7 @@ export const normalizeEndpoint = (raw: string, fallback: string = "") => {
   if (!trimmed) return fallback;
   try {
     const url = new URL(trimmed);
-    if (url.pathname === "/" || url.pathname === "" || url.pathname.replace(/\/+$/, "") === "/v1") {
+    if (url.pathname === "/" || url.pathname === "") {
       url.pathname = "/v1/chat/completions";
     }
     return url.toString();
