@@ -778,85 +778,38 @@ Example Output:
     const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 110000);
     
     try {
-      let data: any;
-
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
-      const effectiveKey = useCustomApi ? imageApiKey : (isGptImage2Mode ? GPT_IMAGE_2_API_KEY : FRONTEND_IMG_API_KEY);
-      const effectiveEndpoint = useCustomApi ? imageApiEndpoint : (isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : FRONTEND_IMG_API_ENDPOINT);
       const effectiveModel = useCustomApi ? (imageModelName || "grok-imagine-image-lite") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : FRONTEND_IMG_MODEL_NAME);
+      const apiConfig = useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {};
 
-      const endpoint = cleanCustomEndpoint(effectiveEndpoint);
-      if (useCustomApi) {
-        try {
-          validateCustomImageEndpoint(endpoint);
-        } catch (ve: any) {
-          throw new Error(ve.message);
-        }
-      }
-      const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
-      const isImagesGenEndpoint = /\/images\/generations\/?$/i.test(endpoint);
-      const buildPayload = (withSize: boolean) => {
-        if (isImagesGenEndpoint) {
-          const p: any = { model: effectiveModel, prompt, n: 1, response_format: "url" };
-          if (withSize) p.size = sizeStr;
-          return p;
-        }
-        const p: any = {
-          model: effectiveModel,
-          messages: [{ role: "user", content: prompt }],
-          stream: false,
-          max_tokens: 4096
-        };
-        if (withSize) {
-          p.image_config = { n: 1, size: sizeStr, response_format: "b64_json" };
-        }
-        return p;
-      };
-      let response = await fetch(endpoint, {
+      const token = localStorage.getItem("auth_token");
+      const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${effectiveKey}`
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
-        body: JSON.stringify(buildPayload(true)),
+        body: JSON.stringify({
+          prompt,
+          modelName: effectiveModel,
+          aspectRatio: imageAspectRatio,
+          ...apiConfig
+        }),
         signal: controller.signal
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        if (response.status === 400 && /size|image_config/i.test(errText)) {
-          response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${effectiveKey}`
-            },
-            body: JSON.stringify(buildPayload(false)),
-            signal: controller.signal
-          });
-          if (!response.ok) {
-            const errText2 = await response.text();
-            clearTimeout(timeoutId);
-            throw new Error(`API 请求失败 (${response.status}): ${errText2.substring(0, 200)}`);
-          }
-        } else {
-          clearTimeout(timeoutId);
-          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
-        }
-      }
       clearTimeout(timeoutId);
-      data = await response.json();
 
-      const extractedImage = extractImageUrlFromAny(data);
-      if (extractedImage) {
-        setGeneratedImage(extractedImage);
-        setImageMeta(readImageMeta(data));
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: `请求失败 (${response.status})` }));
+        throw new Error(errData.error || `请求失败 (${response.status})`);
+      }
+
+      const data = await response.json();
+      if (data.imageUrl) {
+        setGeneratedImage(data.imageUrl);
+        setImageMeta(data);
         if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
         return;
-      }
-
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content === "string" && content.length > 0) {
-        throw new Error(`生成失败，模型未能返回图片链接，仅返回了文本: ${content.substring(0, 100)}...`);
       }
 
       throw new Error("未能识别图片链接，API 返回格式异常");
@@ -931,103 +884,43 @@ Example Output:
     const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
 
     try {
-      const effectiveKey = imageApiKey || FRONTEND_VIDEO_API_KEY;
-      const effectiveEndpoint = imageApiEndpoint || FRONTEND_VIDEO_API_ENDPOINT;
       const effectiveModel = imageModelName || FRONTEND_VIDEO_MODEL_NAME;
-      const finalEndpoint = cleanCustomEndpoint(effectiveEndpoint);
+      const useCustomApi = Boolean(imageApiKey && imageApiEndpoint);
+      const apiConfig = useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {};
 
-      const videoPayload: Record<string, any> = {
-        model: effectiveModel,
-        prompt: userInput.trim(),
-        duration: VIDEO_DURATION_SECONDS
-      };
-
-      const startResponse = await fetch(finalEndpoint, {
+      const token = localStorage.getItem("auth_token");
+      const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${effectiveKey}`
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
-        body: JSON.stringify(videoPayload),
+        body: JSON.stringify({
+          prompt: userInput.trim(),
+          modelName: effectiveModel,
+          mediaType: "video",
+          duration: VIDEO_DURATION_SECONDS,
+          aspectRatio: imageAspectRatio,
+          ...apiConfig
+        }),
         signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
-      if (!startResponse.ok) {
-        const errText = await startResponse.text();
-        clearTimeout(timeoutId);
-        throw new Error(`视频API请求失败 (${startResponse.status}): ${errText.substring(0, 200)}`);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: `请求失败 (${response.status})` }));
+        throw new Error(errData.error || `请求失败 (${response.status})`);
       }
 
-      const startData = await startResponse.json();
-      
-      const immediateVideo = extractVideoUrlFromAny(startData);
-      if (immediateVideo) {
-        clearTimeout(timeoutId);
-        setGeneratedVideo(immediateVideo);
+      const data = await response.json();
+      const videoUrl = extractVideoUrlFromAny(data);
+      if (videoUrl) {
+        setGeneratedVideo(videoUrl);
         if (!imageApiKey) deductLimit('video');
         return;
       }
 
-      const requestId = startData?.id || 
-                        startData?.request_id || 
-                        startData?.video?.id ||
-                        startData?.data?.id ||
-                        startData?.result?.id;
-      
-      if (!requestId) {
-        clearTimeout(timeoutId);
-        throw new Error("视频API未返回任务ID，无法轮询状态");
-      }
-
-      const statusEndpoint = buildVideoStatusEndpoint(finalEndpoint, String(requestId));
-      const pollStartedAt = Date.now();
-      const POLL_INTERVAL = 5000;
-      const MAX_WAIT = 8 * 60 * 1000;
-
-      while (Date.now() - pollStartedAt < MAX_WAIT) {
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-        
-        if (controller.signal.aborted) break;
-
-        const pollResponse = await fetch(statusEndpoint, {
-          headers: {
-            "Authorization": `Bearer ${effectiveKey}`
-          },
-          signal: controller.signal
-        });
-
-        if (!pollResponse.ok) {
-          const pollText = await pollResponse.text();
-          clearTimeout(timeoutId);
-          throw new Error(`视频状态查询失败 (${pollResponse.status}): ${pollText.substring(0, 200)}`);
-        }
-
-        const pollData = await pollResponse.json();
-        const status = String(pollData?.status ?? "").toLowerCase();
-        
-        if (status === "pending" || status === "processing" || status === "queued") {
-          continue;
-        }
-
-        if (status === "done" || status === "completed" || status === "succeeded") {
-          const videoUrl = extractVideoUrlFromAny(pollData);
-          if (videoUrl) {
-            clearTimeout(timeoutId);
-            setGeneratedVideo(videoUrl);
-            if (!imageApiKey) deductLimit('video');
-            return;
-          }
-          clearTimeout(timeoutId);
-          throw new Error("视频已完成但未找到视频链接");
-        }
-
-        const statusError = pollData?.error?.message || pollData?.message || `视频生成失败，状态: ${status}`;
-        clearTimeout(timeoutId);
-        throw new Error(statusError);
-      }
-
-      clearTimeout(timeoutId);
-      throw new Error("视频生成超时（超过8分钟），请稍后重试");
+      throw new Error("视频生成完成但未找到视频链接");
     } catch (err: any) {
       clearTimeout(timeoutId);
       if (err.name === "AbortError") {
@@ -1077,142 +970,40 @@ Example Output:
       lastImg2ImgAtRef.current = now;
 
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
-      const effectiveKey = useCustomApi ? imageApiKey : (isGptImage2Mode ? GPT_IMAGE_2_API_KEY : FRONTEND_IMG_API_KEY);
-      const effectiveEndpoint = useCustomApi ? imageApiEndpoint : (isGptImage2Mode ? GPT_IMAGE_2_API_ENDPOINT : FRONTEND_IMG_API_ENDPOINT);
       const effectiveModel = useCustomApi ? (imageModelName || "grok-imagine-image-edit") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : "grok-imagine-image-edit");
-      let data: any;
+      const apiConfig = useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {};
 
-      const endpoint = cleanCustomEndpoint(effectiveEndpoint);
-      if (useCustomApi) {
-        try {
-          validateCustomImageEndpoint(endpoint);
-        } catch (ve: any) {
-          throw new Error(ve.message);
-        }
-      }
-      const sizeStr = aspectRatioSizeMap[imageAspectRatio] || "1024x1024";
-      const buildImg2ImgPayload = (text: string, withSize: boolean) => {
-        const p: any = {
-          model: effectiveModel,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text },
-              { type: "image_url", image_url: { url: uploadedImage } }
-            ]
-          }],
-          stream: false,
-          max_tokens: 4096
-        };
-        if (withSize) {
-          p.image_config = { n: 1, size: sizeStr, response_format: "b64_json" };
-        }
-        return p;
-      };
-      let response = await fetch(endpoint, {
+      const token = localStorage.getItem("auth_token");
+      const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${effectiveKey}`
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
-        body: JSON.stringify(buildImg2ImgPayload(promptInstruction, true)),
+        body: JSON.stringify({
+          prompt: promptInstruction,
+          image_url: uploadedImage,
+          modelName: effectiveModel,
+          aspectRatio: imageAspectRatio,
+          ...apiConfig
+        }),
         signal: controller.signal
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        if (response.status === 400 && /size|image_config/i.test(errText)) {
-          response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${effectiveKey}`
-            },
-            body: JSON.stringify(buildImg2ImgPayload(promptInstruction, false)),
-            signal: controller.signal
-          });
-          if (!response.ok) {
-            const errText2 = await response.text();
-            clearTimeout(timeoutId);
-            throw new Error(`API 请求失败 (${response.status}): ${errText2.substring(0, 200)}`);
-          }
-        } else {
-          clearTimeout(timeoutId);
-          throw new Error(`API 请求失败 (${response.status}): ${errText.substring(0, 200)}`);
-        }
-      }
       clearTimeout(timeoutId);
-      data = await response.json();
 
-      const extractedImage = extractImageUrlFromAny(data);
-      if (extractedImage) {
-        setGeneratedImage(extractedImage);
-        setImageMeta(readImageMeta(data));
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: `请求失败 (${response.status})` }));
+        throw new Error(errData.error || `请求失败 (${response.status})`);
+      }
+
+      const data = await response.json();
+      if (data.imageUrl) {
+        setGeneratedImage(data.imageUrl);
+        setImageMeta(data);
         if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
         return;
       }
 
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content === "string" && content.length > 0) {
-        const retryPrompt = `Generate one image only. Keep character identity strictly consistent with the reference image: same face, hairstyle, outfit, body proportions, pose and camera framing. Do not drift style away from reference. Use this recovered guidance as secondary hint: ${content}. Original transformation request: ${promptInstruction}`;
-        const retryController = new AbortController();
-        const retryTimeoutId = setTimeout(() => retryController.abort(), isGptImage2Mode ? 310000 : 90000);
-        let retryData: any;
-
-        const retryEndpoint = cleanCustomEndpoint(effectiveEndpoint);
-        const retryPayload: any = {
-          model: effectiveModel,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text: retryPrompt },
-              { type: "image_url", image_url: { url: uploadedImage } }
-            ]
-          }],
-          stream: false,
-          max_tokens: 4096
-        };
-        retryPayload.image_config = { n: 1, size: sizeStr, response_format: "b64_json" };
-        let retryResponse = await fetch(retryEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${effectiveKey}`
-          },
-          body: JSON.stringify(retryPayload),
-          signal: retryController.signal
-        });
-        if (!retryResponse.ok) {
-          const errText = await retryResponse.text();
-          if (retryResponse.status === 400 && /size|image_config/i.test(errText)) {
-            delete retryPayload.image_config;
-            retryResponse = await fetch(retryEndpoint, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${effectiveKey}`
-              },
-              body: JSON.stringify(retryPayload),
-              signal: retryController.signal
-            });
-          }
-        }
-        clearTimeout(retryTimeoutId);
-        if (!retryResponse.ok) {
-          const errText = await retryResponse.text();
-          throw new Error(`重试请求失败 (${retryResponse.status}): ${errText.substring(0, 200)}`);
-        }
-        retryData = await retryResponse.json();
-
-        const retryImage = extractImageUrlFromAny(retryData);
-        if (retryImage) {
-          setGeneratedImage(retryImage);
-          setImageMeta(readImageMeta(retryData));
-          if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
-          return;
-        }
-        throw new Error(`生成失败，模型未能返回图片链接，仅返回了文本: ${content.substring(0, 100)}...`);
-      }
-      
       throw new Error("未能识别图片链接，API 返回格式异常");
 
     } catch (err: any) {
