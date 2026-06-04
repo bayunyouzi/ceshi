@@ -379,7 +379,7 @@ export async function POST(req: Request) {
     let finalEndpoint = isVideo
       ? (apiEndpoint || defaultEndpoint)
       : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img);
-    const finalModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (modelName || defaultModel);
+    const finalModel = isVideo ? (modelName || DEFAULT_TXT2VIDEO_MODEL_NAME) : (modelName || defaultModel);
     // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
     // 但 GPT-Image-2 模式下不做强制替换（该模型支持文生图和图生图）
     const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
