@@ -384,12 +384,6 @@ export async function POST(req: Request) {
     // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
     const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
 
-    // GPT-Image-2 img2img: use images/edits endpoint instead of chat/completions
-    const useGpt2Img2Img = isGpt2Model && isImg2Img;
-    if (useGpt2Img2Img) {
-      finalEndpoint = finalEndpoint.replace(/\/chat\/completions$/i, '/images/edits');
-    }
-
     // 调试日志：GPT-Image-2 请求参数
     if (isGpt2Model) {
       console.log('[GPT-Image-2 Debug] Request params:', {
@@ -893,16 +887,7 @@ export async function POST(req: Request) {
       }
 
       let requestPayload: any;
-      if (useGpt2Img2Img) {
-        requestPayload = {
-          model: actualModel,
-          image: finalImageUrl,
-          prompt: finalPrompt,
-          n: 1,
-          response_format: "b64_json",
-          size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`
-        };
-      } else if (useImagesEditsApi) {
+      if (useImagesEditsApi) {
         // /images/edits 端点格式：multipart/form-data
         // 暂时使用 chat/completions 格式，因为大多数 API 不直接支持 edits
         requestPayload = {

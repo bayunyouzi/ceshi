@@ -71,6 +71,8 @@ export default function Home() {
   const lastImagePromptAtRef = useRef(0);
   const lastImg2ImgFingerprintRef = useRef("");
   const lastImg2ImgAtRef = useRef(0);
+  const lastImg2Img429AtRef = useRef(0);
+  const lastImage429AtRef = useRef(0);
   const VIDEO_DURATION_SECONDS = 10;
   const IMAGE_DEBOUNCE_MS = 1200;
   const IDEMPOTENCY_BUCKET_MS = 10000;
@@ -777,6 +779,13 @@ Example Output:
 
   const handleGenerateImage = async (prompt: string) => {
     if (imageRequestLockRef.current || imageLoading) return;
+
+    const cooldownLeft = 10000 - (Date.now() - lastImage429AtRef.current);
+    if (cooldownLeft > 0) {
+      setError(`请求过于频繁，请等待 ${Math.ceil(cooldownLeft / 1000)} 秒后重试`);
+      return;
+    }
+
     const normalizedPrompt = prompt.trim().replace(/\s+/g, " ");
     const now = Date.now();
     if (normalizedPrompt && lastImagePromptRef.current === normalizedPrompt && now - lastImagePromptAtRef.current < IMAGE_DEBOUNCE_MS) {
@@ -854,6 +863,7 @@ Example Output:
       } else if (errMsg.includes("500") || errMsg.includes("服务暂时不可用")) {
         displayMsg = "图片生成服务暂时不可用，请稍后重试";
       } else if (errMsg.includes("429") || errMsg.includes("请求过于频繁")) {
+        lastImage429AtRef.current = Date.now();
         displayMsg = "请求过于频繁，请等待10秒后重试";
       } else if (
         errMsg.includes("502") ||
@@ -961,6 +971,12 @@ Example Output:
       return;
     }
 
+    const cooldownLeft = 10000 - (Date.now() - lastImg2Img429AtRef.current);
+    if (cooldownLeft > 0) {
+      setError(`请求过于频繁，请等待 ${Math.ceil(cooldownLeft / 1000)} 秒后重试`);
+      return;
+    }
+
     if (!(imageApiKey && imageApiEndpoint) && !checkLimit('image')) return;
     imageRequestLockRef.current = true;
 
@@ -1036,6 +1052,7 @@ Example Output:
       } else if (msg.includes("500") || msg.includes("服务暂时不可用")) {
         setError("图片生成服务暂时不可用，请稍后重试");
       } else if (msg.includes("429") || msg.includes("请求过于频繁")) {
+        lastImg2Img429AtRef.current = Date.now();
         setError("请求过于频繁，请等待10秒后重试");
       } else if (msg.includes("502") || msg.includes("Bad Gateway") || msg.includes("JSON")) {
         setError("上游服务暂时异常，请稍后重试");
