@@ -916,7 +916,7 @@ Example Output:
     try {
       const effectiveModel = isAgnesMode ? AGNES_VIDEO_MODEL : (imageModelName || FRONTEND_VIDEO_MODEL_NAME);
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint);
-      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/videos/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
+      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/videos` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
 
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
@@ -1007,7 +1007,7 @@ Example Output:
 
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
       const effectiveModel = isAgnesMode ? AGNES_IMG2IMG_MODEL : (useCustomApi ? (imageModelName || "grok-imagine-image-edit") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : "grok-imagine-image-edit"));
-      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/chat/completions` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
+      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/images/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
 
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
@@ -1609,7 +1609,7 @@ Example Output:
                     className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode) ? "bg-theme-bg-card border-theme-border-strong text-theme-text-placeholder cursor-not-allowed" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-amber-300 hover:border-amber-500/30"}`}
                   >
                     <ImageIcon className="w-4 h-4" />
-                    {isGptImage2Mode ? (isImg2ImgMode ? "GPT-Image-2 图生图: 已开启" : "GPT-Image-2 文生图: 已开启") : "GPT-Image-2: 点击切换"}
+                    {isGptImage2Mode ? (isImg2ImgMode ? "GPT-Image-2: 仅文生图" : "GPT-Image-2 文生图: 已开启") : "GPT-Image-2: 点击切换"}
                   </button>
                   {isGptImage2Mode && (
                     <div className="border rounded-xl p-2.5 bg-amber-500/10 border-amber-500/20">

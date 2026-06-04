@@ -95,6 +95,11 @@ const isGrokImagineModel = (model: string | undefined) => {
   return /^grok-imagine-(?:image(?:-lite|-edit|-pro)?|video)$/i.test(model);
 };
 
+const isAgnesModel = (model: string | undefined) => {
+  if (!model) return false;
+  return /^agnes-/i.test(model);
+};
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildVideoStatusEndpoint = (startEndpoint: string, requestId: string) => {
@@ -365,6 +370,7 @@ export async function POST(req: Request) {
     const isImg2Img = Boolean(image_url) && !isVideo;
     // GPT-Image-2 使用标准的 /v1/images/generations 端点格式
     const isGpt2Model = modelName && isGptImage2Model(modelName);
+    const isAgnes = modelName && isAgnesModel(modelName);
     const defaultApiKey = isVideo ? DEFAULT_TXT2VIDEO_API_KEY : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_KEY : (isImg2Img ? DEFAULT_IMG2IMG_API_KEY : DEFAULT_TXT2IMG_API_KEY));
     const defaultEndpoint = isVideo ? DEFAULT_TXT2VIDEO_API_ENDPOINT : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_ENDPOINT : (isImg2Img ? DEFAULT_IMG2IMG_API_ENDPOINT : DEFAULT_TXT2IMG_API_ENDPOINT));
     const defaultModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (isImg2Img ? DEFAULT_IMG2IMG_MODEL_NAME : DEFAULT_TXT2IMG_MODEL_NAME);
@@ -509,7 +515,14 @@ export async function POST(req: Request) {
           ? `Use the provided image as the exact first frame and starting composition of the video. Preserve the same subject, identity, outfit, colors, camera angle, and scene layout at the beginning, then animate naturally from that first frame while following this request:\n\n${finalPrompt}`
           : finalPrompt;
 
-        const videoPayload: Record<string, any> = {
+        const videoPayload: Record<string, any> = isAgnes ? {
+          model: actualModel,
+          prompt: videoPrompt,
+          height: 768,
+          width: 1152,
+          num_frames: 121,
+          frame_rate: 24
+        } : {
           model: actualModel,
           prompt: videoPrompt,
           duration: videoDuration
@@ -620,7 +633,7 @@ export async function POST(req: Request) {
           return respond({ error: `视频任务创建失败：上游返回格式异常，${upstreamMessage}` }, 502);
         }
 
-        const statusEndpoint = buildVideoStatusEndpoint(finalEndpoint, requestId);
+        const statusEndpoint = isAgnes ? `${finalEndpoint}/${requestId}` : buildVideoStatusEndpoint(finalEndpoint, requestId);
         const pollStartedAt = Date.now();
 
         while (Date.now() - pollStartedAt < VIDEO_MAX_WAIT_MS) {
@@ -675,13 +688,16 @@ export async function POST(req: Request) {
           }
 
           if (status === "done") {
-            const videoUrl =
-              pollData?.video?.url ||
-              pollData?.video_url ||
-              pollData?.videos?.[0]?.url ||
-              pollData?.result?.video_url ||
-              pollData?.result?.url ||
-              null;
+            const videoUrl = isAgnes
+              ? pollData?.video_url
+              : (
+                pollData?.video?.url ||
+                pollData?.video_url ||
+                pollData?.videos?.[0]?.url ||
+                pollData?.result?.video_url ||
+                pollData?.result?.url ||
+                null
+              );
 
             if (!videoUrl) {
               return respond({ error: "视频生成完成，但未返回可用的视频地址" }, 502);
@@ -897,19 +913,27 @@ export async function POST(req: Request) {
           max_tokens: 4096
         };
       } else if (useImagesGenerationApi) {
-        requestPayload = {
+        requestPayload = isAgnes ? {
+          model: actualModel,
+          prompt: finalPrompt,
+          size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`
+        } : {
           model: actualModel,
           prompt: finalPrompt,
           n: 1,
           response_format: "url",
           size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`
         };
-        // 图生图模式：确保正确传递图片参数
         if (image_url && !isVideo) {
-          // 使用 finalImageUrl（已转换为base64）而不是原始 image_url
-          requestPayload.image = finalImageUrl;
-          // 某些API可能需要 image_url 字段
-          requestPayload.image_url = finalImageUrl;
+          if (isAgnes) {
+            requestPayload.extra_body = {
+              image: [finalImageUrl],
+              response_format: "url"
+            };
+          } else {
+            requestPayload.image = finalImageUrl;
+            requestPayload.image_url = finalImageUrl;
+          }
         }
       } else {
         requestPayload = {
