@@ -926,10 +926,7 @@ export async function POST(req: Request) {
         };
         if (image_url && !isVideo) {
           if (isAgnes) {
-            requestPayload.extra_body = {
-              image: [finalImageUrl],
-              response_format: "url"
-            };
+            requestPayload.image = finalImageUrl;
           } else {
             requestPayload.image = finalImageUrl;
             requestPayload.image_url = finalImageUrl;

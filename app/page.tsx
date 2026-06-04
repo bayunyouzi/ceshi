@@ -25,7 +25,7 @@ export default function Home() {
   const AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
   const AGNES_TEXT_MODEL = "agnes-2.0-flash";
   const AGNES_IMAGE_MODEL = "agnes-image-2.1-flash";
-  const AGNES_IMG2IMG_MODEL = "agnes-image-2.0-flash";
+  const AGNES_IMG2IMG_MODEL = "agnes-image-2.1-flash";
   const AGNES_VIDEO_MODEL = "agnes-video-v2.0";
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "", recommended_settings: null });
@@ -613,13 +613,51 @@ Example Output:
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    const MAX_SIZE = 1024;
+    const JPEG_QUALITY = 0.8;
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      let { width, height } = img;
+      if (width > MAX_SIZE || height > MAX_SIZE) {
+        if (width > height) {
+          height = Math.round((height / width) * MAX_SIZE);
+          width = MAX_SIZE;
+        } else {
+          width = Math.round((width / height) * MAX_SIZE);
+          height = MAX_SIZE;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        const reader = new FileReader();
+        reader.onloadend = () => setUploadedImage(reader.result as string);
+        reader.readAsDataURL(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const compressed = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+      setUploadedImage(compressed);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setUploadedImage(reader.result as string);
-      };
+      reader.onloadend = () => setUploadedImage(reader.result as string);
       reader.readAsDataURL(file);
-    }
+    };
+
+    img.src = objectUrl;
   };
 
   const isRenderableImageRef = (value: unknown): value is string => {
@@ -1141,8 +1179,8 @@ Example Output:
             model: finalModel,
             temperature: isDeepThinking ? undefined : 0.8,
             stream: false,
-            apiEndpoint: useCustomPromptConfig ? finalEndpoint : undefined,
-            apiKey: useCustomPromptConfig ? finalApiKey : undefined,
+            apiEndpoint: isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : (useCustomPromptConfig ? finalEndpoint : undefined),
+            apiKey: isAgnesMode ? AGNES_API_KEY : (useCustomPromptConfig ? finalApiKey : undefined),
             messages
           }),
           signal: controller.signal
