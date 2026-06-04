@@ -21,6 +21,12 @@ export default function Home() {
   const FRONTEND_VIDEO_API_KEY = process.env.NEXT_PUBLIC_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
   const FRONTEND_VIDEO_API_ENDPOINT = process.env.NEXT_PUBLIC_VIDEO_API_ENDPOINT || "https://api.x.ai/v1/videos/generations";
   const FRONTEND_VIDEO_MODEL_NAME = process.env.NEXT_PUBLIC_VIDEO_MODEL_NAME || "grok-imagine-video";
+  const AGNES_API_KEY = "sk-13y7wqCmK3TNX7jZDNWKTks0bKVZG9VY87ojsSfmXWHtzIkn";
+  const AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
+  const AGNES_TEXT_MODEL = "agnes-2.0-flash";
+  const AGNES_IMAGE_MODEL = "agnes-image-2.1-flash";
+  const AGNES_IMG2IMG_MODEL = "agnes-image-2.0-flash";
+  const AGNES_VIDEO_MODEL = "agnes-video-v2.0";
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>({ prompt: "", negative_prompt: "", recommended_settings: null });
   const [copied, setCopied] = useState("");
@@ -46,6 +52,7 @@ export default function Home() {
   const [isDeepThinking, setIsDeepThinking] = useState(false);
   const [userInput, setUserInput] = useState("");
   const [characterCount, setCharacterCount] = useState<'default' | 'solo' | 'duo'>('default');
+  const [isAgnesMode, setIsAgnesMode] = useState(false);
   
   // 图片生成相关状态
   const [imageLoading, setImageLoading] = useState(false);
@@ -226,6 +233,13 @@ export default function Home() {
     localStorage.setItem(`gpt_image2_mode_${scope}`, String(newState));
   };
 
+  const toggleAgnesMode = () => {
+    const newState = !isAgnesMode;
+    setIsAgnesMode(newState);
+    const scope = getSettingScope();
+    localStorage.setItem(`agnes_mode_${scope}`, String(newState));
+  };
+
   const getChinaDateKey = () =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Shanghai",
@@ -261,6 +275,12 @@ export default function Home() {
     const isGptMode = savedGptImage2Mode === 'true';
     if (isGptMode) {
       setIsGptImage2Mode(true);
+    }
+
+    // 加载 Agnes 模式标志
+    const savedAgnesMode = localStorage.getItem(`agnes_mode_${scope}`);
+    if (savedAgnesMode === 'true') {
+      setIsAgnesMode(true);
     }
 
     const savedImageKey = readSetting(scope, "image_gen_api_key");
@@ -779,8 +799,8 @@ Example Output:
     
     try {
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
-      const effectiveModel = useCustomApi ? (imageModelName || "grok-imagine-image-lite") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : FRONTEND_IMG_MODEL_NAME);
-      const apiConfig = useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {};
+      const effectiveModel = isAgnesMode ? AGNES_IMAGE_MODEL : (useCustomApi ? (imageModelName || "grok-imagine-image-lite") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : FRONTEND_IMG_MODEL_NAME));
+      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/images/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
 
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
@@ -884,9 +904,9 @@ Example Output:
     const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
 
     try {
-      const effectiveModel = imageModelName || FRONTEND_VIDEO_MODEL_NAME;
+      const effectiveModel = isAgnesMode ? AGNES_VIDEO_MODEL : (imageModelName || FRONTEND_VIDEO_MODEL_NAME);
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint);
-      const apiConfig = useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {};
+      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/videos/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
 
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
@@ -970,8 +990,8 @@ Example Output:
       lastImg2ImgAtRef.current = now;
 
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
-      const effectiveModel = useCustomApi ? (imageModelName || "grok-imagine-image-edit") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : "grok-imagine-image-edit");
-      const apiConfig = useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {};
+      const effectiveModel = isAgnesMode ? AGNES_IMG2IMG_MODEL : (useCustomApi ? (imageModelName || "grok-imagine-image-edit") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : "grok-imagine-image-edit"));
+      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/chat/completions` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
 
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
@@ -1044,9 +1064,9 @@ Example Output:
 
     const FALLBACK_MODEL = isVideoMode ? "grok-4.20-0309-non-reasoning" : (isDeepThinking ? "grok-4.20-0309-reasoning" : "grok-4.20-0309-non-reasoning");
     
-    const finalEndpoint = apiEndpoint || undefined;
-    const finalApiKey = apiKey || undefined;
-    const finalModel = modelName || FALLBACK_MODEL;
+    const finalEndpoint = isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : (apiEndpoint || undefined);
+    const finalApiKey = isAgnesMode ? AGNES_API_KEY : (apiKey || undefined);
+    const finalModel = isAgnesMode ? AGNES_TEXT_MODEL : (modelName || FALLBACK_MODEL);
 
     try {
       const isUncensored = isUncensoredMode && !isSafeMode;
@@ -1578,6 +1598,20 @@ Example Output:
                     <div className="border rounded-xl p-2.5 bg-amber-500/10 border-amber-500/20">
                       <p className="text-[10px] text-center leading-relaxed font-mono text-amber-400/90 font-bold">
                         GPT-Image-2 模型每日仅限50次，先到先得。生成速度较慢，请耐心等待。{isImg2ImgMode ? "当前为图生图模式。" : ""}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    onClick={toggleAgnesMode}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isAgnesMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-cyan-300 hover:border-cyan-500/30"}`}
+                  >
+                    <Zap className="w-4 h-4" />
+                    {isAgnesMode ? "Agnes 模式: 已开启" : "Agnes 模式: 点击切换"}
+                  </button>
+                  {isAgnesMode && (
+                    <div className="border rounded-xl p-2.5 bg-cyan-500/10 border-cyan-500/20">
+                      <p className="text-[10px] text-center leading-relaxed font-mono text-cyan-400/90 font-bold">
+                        Agnes AI 模型已激活。文本/图片/视频生成均切换至 Agnes API。
                       </p>
                     </div>
                   )}

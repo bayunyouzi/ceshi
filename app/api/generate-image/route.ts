@@ -369,9 +369,9 @@ export async function POST(req: Request) {
     const defaultEndpoint = isVideo ? DEFAULT_TXT2VIDEO_API_ENDPOINT : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_ENDPOINT : (isImg2Img ? DEFAULT_IMG2IMG_API_ENDPOINT : DEFAULT_TXT2IMG_API_ENDPOINT));
     const defaultModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (isImg2Img ? DEFAULT_IMG2IMG_MODEL_NAME : DEFAULT_TXT2IMG_MODEL_NAME);
 
-    let finalApiKey = isVideo ? defaultApiKey : (apiKey || defaultApiKey);
+    let finalApiKey = apiKey || defaultApiKey;
     let finalEndpoint = isVideo
-      ? defaultEndpoint
+      ? (apiEndpoint || defaultEndpoint)
       : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img);
     const finalModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (modelName || defaultModel);
     // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
@@ -383,7 +383,13 @@ export async function POST(req: Request) {
     // 图生图使用 /images/edits 端点
     // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
     const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
-    
+
+    // GPT-Image-2 img2img: use images/edits endpoint instead of chat/completions
+    const useGpt2Img2Img = isGpt2Model && isImg2Img;
+    if (useGpt2Img2Img) {
+      finalEndpoint = finalEndpoint.replace(/\/chat\/completions$/i, '/images/edits');
+    }
+
     // 调试日志：GPT-Image-2 请求参数
     if (isGpt2Model) {
       console.log('[GPT-Image-2 Debug] Request params:', {
@@ -887,7 +893,16 @@ export async function POST(req: Request) {
       }
 
       let requestPayload: any;
-      if (useImagesEditsApi) {
+      if (useGpt2Img2Img) {
+        requestPayload = {
+          model: actualModel,
+          image: finalImageUrl,
+          prompt: finalPrompt,
+          n: 1,
+          response_format: "b64_json",
+          size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`
+        };
+      } else if (useImagesEditsApi) {
         // /images/edits 端点格式：multipart/form-data
         // 暂时使用 chat/completions 格式，因为大多数 API 不直接支持 edits
         requestPayload = {
