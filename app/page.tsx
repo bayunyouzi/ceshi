@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle, Sun, Moon } from "lucide-react";
+import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle, Sun, Moon, Zap } from "lucide-react";
 
 import { getRandomTags } from "../lib/utils";
 import { img2ImgPrompts, img2ImgEffectOptions } from "../lib/img2imgPrompts";
