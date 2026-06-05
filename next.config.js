@@ -4,7 +4,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // 静态资源允许浏览器缓存，减少服务器压力
+  swcMinify: true,
   headers: async () => [
     {
       source: '/_next/static/:path*',

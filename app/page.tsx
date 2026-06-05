@@ -944,7 +944,7 @@ Example Output:
     setImageMeta(null);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 110000);
+    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 320000 : 120000);
     
     try {
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
@@ -991,7 +991,7 @@ Example Output:
       let displayMsg = errMsg;
 
       if (err.name === "AbortError") {
-        displayMsg = "请求超时，生成时间过长，请稍后重试";
+        displayMsg = isGptImage2Mode ? "请求超时，GPT-Image-2 模型响应较慢，请耐心等待或稍后重试" : "请求超时，生成时间过长，请稍后重试";
       } else if (
         errMsg.includes("PROHIBITED_CONTENT") ||
         errMsg.includes("prompt_blocked") ||
@@ -1112,13 +1112,18 @@ Example Output:
       return;
     }
 
+    if (isAgnesMode) {
+      setError("图生图暂不支持 Agnes 模式，请关闭 Agnes 模式后重试");
+      return;
+    }
+
     const cooldownLeft = 10000 - (Date.now() - lastImg2Img429AtRef.current);
     if (cooldownLeft > 0) {
       setError(`请求过于频繁，请等待 ${Math.ceil(cooldownLeft / 1000)} 秒后重试`);
       return;
     }
 
-    if (!(imageApiKey && imageApiEndpoint) && !checkLimit('image')) return;
+    if (!checkLimit('image')) return;
     imageRequestLockRef.current = true;
 
     setImageLoading(true);
@@ -1127,12 +1132,11 @@ Example Output:
     setImageMeta(null);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 310000 : 60000); // GPT-Image-2: 310秒，其他: 60秒
+    const timeoutId = setTimeout(() => controller.abort(), 320000);
 
     try {
       let promptInstruction = img2ImgPrompts[img2ImgEffect] || img2ImgPrompts.random;
       
-      // 添加用户额外需求
       if (img2ImgInput && img2ImgInput.trim()) {
         promptInstruction += `\n\nUser Additional Request: ${img2ImgInput}`;
       }
@@ -1146,10 +1150,6 @@ Example Output:
       lastImg2ImgFingerprintRef.current = img2imgFingerprint;
       lastImg2ImgAtRef.current = now;
 
-      const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
-      const effectiveModel = isAgnesMode ? AGNES_IMG2IMG_MODEL : (useCustomApi ? (imageModelName || GPT_IMAGE_2_MODEL) : GPT_IMAGE_2_MODEL);
-      const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/images/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
-
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
         method: "POST",
@@ -1160,10 +1160,9 @@ Example Output:
         body: JSON.stringify({
           prompt: promptInstruction,
           image_url: uploadedImage,
-          modelName: effectiveModel,
+          modelName: GPT_IMAGE_2_MODEL,
           aspectRatio: imageAspectRatio,
-          ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
-          ...apiConfig
+          ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {})
         }),
         signal: controller.signal
       });
@@ -1178,7 +1177,7 @@ Example Output:
       if (data.imageUrl) {
         setGeneratedImage(data.imageUrl);
         setImageMeta(data);
-        if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
+        deductLimit('image');
         return;
       }
 
@@ -1188,7 +1187,7 @@ Example Output:
       clearTimeout(timeoutId);
       const msg = err.message || "生成图片失败，请稍后重试";
       if (err.name === "AbortError") {
-        setError("请求超时，图像处理时间过长，请稍后重试");
+        setError("请求超时，GPT-Image-2 模型响应较慢，请耐心等待或稍后重试");
       } else if (msg.includes("Failed to fetch")) {
         setError("无法直连该自定义生图接口，可能是网络问题、服务未开启跨域访问(CORS)，或接口不可达。请确认地址正确且服务端支持浏览器跨域请求。");
       } else if (msg.includes("500") || msg.includes("服务暂时不可用")) {
@@ -1761,11 +1760,15 @@ Example Output:
                     </div>
                   )}
                   <button
-                    onClick={toggleAgnesMode}
-                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isAgnesMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-cyan-300 hover:border-cyan-500/30"}`}
+                    onClick={() => {
+                      if (isImg2ImgMode) return;
+                      toggleAgnesMode();
+                    }}
+                    disabled={isImg2ImgMode}
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isImg2ImgMode ? "bg-theme-bg-card border-theme-border-strong text-theme-text-placeholder cursor-not-allowed" : isAgnesMode ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-cyan-300 hover:border-cyan-500/30"}`}
                   >
                     <Zap className="w-4 h-4" />
-                    {isAgnesMode ? "Agnes 模式: 已开启" : "Agnes 模式: 点击切换"}
+                    {isImg2ImgMode ? "Agnes: 图生图不适用" : (isAgnesMode ? "Agnes 模式: 已开启" : "Agnes 模式: 点击切换")}
                   </button>
                   {isAgnesMode && (
                     <div className="border rounded-xl p-2.5 bg-cyan-500/10 border-cyan-500/20">

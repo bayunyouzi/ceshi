@@ -27,6 +27,7 @@ const DEFAULT_IMG2IMG_MODEL_NAME = "grok-imagine-image-edit";
 // GPT-Image-2 默认配置 - 使用独立的 API Key
 const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
 const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
+const DEFAULT_GPT_IMAGE2_MODEL_NAME = "gpt-image-2";
 
 const DEFAULT_TXT2VIDEO_API_KEY = process.env.XAI_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
 const DEFAULT_TXT2VIDEO_API_ENDPOINT = process.env.XAI_VIDEO_API_ENDPOINT || "https://api.x.ai/v1/videos/generations";
@@ -256,46 +257,82 @@ const buildImageClientPayload = (
   modelChanged: Boolean(actualModel && requestedModel && actualModel !== requestedModel)
 });
 
-const extractImageUrlFromAny = (value: any): string | null => {
-  if (!value) return null;
+const extractImageUrlFromAny = (value: any, depth: number = 0): string | null => {
+  if (!value || depth > 6) return null;
   if (typeof value === "string") {
     const text = value.replace(/\\\//g, "/");
-    const dataUriMatch = text.match(/(data:image\/[a-zA-Z0-9.+-]+;base64,[a-zA-Z0-9+/=]+)/i);
-    if (dataUriMatch) return dataUriMatch[1];
+    if (text.startsWith("data:image/")) return text;
+    const dataUriMatch = text.match(/(data:image\/[a-zA-Z0-9.+-]+;base64,[a-zA-Z0-9+/=\n]+)/i);
+    if (dataUriMatch) return dataUriMatch[1].replace(/\n/g, '');
+    const backtickMatch = text.match(/`(https?:\/\/[^`]+)`/);
+    if (backtickMatch) return backtickMatch[1];
     const mdMatch = text.match(/!\[.*?\]\((https?:\/\/[^\s\)]+)(?:\s+".*?")?\)/i);
     if (mdMatch) return mdMatch[1];
-    const urlMatch = text.match(/(https?:\/\/[^\s\)"'<]+)/i);
-    if (urlMatch) return urlMatch[1].replace(/[.,]$/, "");
-    
-    // Fallback: Check if the string itself is a raw base64 string (often returned by some backends)
-    if (text.length > 1000 && !text.includes(' ') && /^[a-zA-Z0-9+/]+={0,2}$/.test(text.substring(0, 100))) {
-      return `data:image/jpeg;base64,${text}`;
+    const urlMatch = text.match(/(https?:\/\/[^\s\)"'<`\]]+)/i);
+    if (urlMatch) return urlMatch[1].replace(/[.,;:!?]$/, "");
+    if (text.length > 500 && !text.includes(' ') && /^[a-zA-Z0-9+/]+={0,2}$/.test(text.substring(0, 100))) {
+      return `data:image/png;base64,${text.replace(/\n/g, '')}`;
     }
-
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        return extractImageUrlFromAny(parsed);
+        return extractImageUrlFromAny(parsed, depth + 1);
       }
     } catch (_e) {}
     return null;
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = extractImageUrlFromAny(item);
+      const found = extractImageUrlFromAny(item, depth + 1);
       if (found) return found;
     }
     return null;
   }
   if (typeof value === "object") {
-    if (typeof value.b64_json === "string" && value.b64_json) return `data:image/png;base64,${value.b64_json}`;
+    const directKeys = ['b64_json', 'base64', 'b64'];
+    for (const key of directKeys) {
+      if (typeof value[key] === "string" && value[key] && value[key].length > 100) {
+        return `data:image/png;base64,${value[key].replace(/\n/g, '')}`;
+      }
+    }
+    if (typeof value.data === "string" && value.data.length > 500 && /^[a-zA-Z0-9+/]+=/.test(value.data.substring(0, 50))) {
+      return `data:image/png;base64,${value.data.replace(/\n/g, '')}`;
+    }
     if (typeof value.image_url === "string" && isRenderableImageRef(value.image_url)) return value.image_url;
     if (typeof value.image_url?.url === "string" && isRenderableImageRef(value.image_url.url)) return value.image_url.url;
     if (typeof value.url === "string" && isRenderableImageRef(value.url)) return value.url;
     if (typeof value.imageUrl === "string" && isRenderableImageRef(value.imageUrl)) return value.imageUrl;
+    if (typeof value.src === "string" && isRenderableImageRef(value.src)) return value.src;
+    if (typeof value.href === "string" && isRenderableImageRef(value.href)) return value.href;
+    if (Array.isArray(value.data)) {
+      for (const item of value.data) {
+        const found = extractImageUrlFromAny(item, depth + 1);
+        if (found) return found;
+      }
+    }
+    if (Array.isArray(value.output)) {
+      for (const item of value.output) {
+        const found = extractImageUrlFromAny(item, depth + 1);
+        if (found) return found;
+      }
+    }
+    if (Array.isArray(value.images)) {
+      for (const item of value.images) {
+        const found = extractImageUrlFromAny(item, depth + 1);
+        if (found) return found;
+      }
+    }
+    if (value.result) {
+      const found = extractImageUrlFromAny(value.result, depth + 1);
+      if (found) return found;
+    }
+    if (value.choices) {
+      const found = extractImageUrlFromAny(value.choices, depth + 1);
+      if (found) return found;
+    }
     for (const v of Object.values(value)) {
-      const found = extractImageUrlFromAny(v);
+      const found = extractImageUrlFromAny(v, depth + 1);
       if (found) return found;
     }
   }
@@ -380,9 +417,18 @@ export async function POST(req: Request) {
       ? (apiEndpoint || defaultEndpoint)
       : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img);
     const finalModel = isVideo ? (modelName || DEFAULT_TXT2VIDEO_MODEL_NAME) : (modelName || defaultModel);
-    // 如果是图生图且用户没有指定模型，强制使用图生图专用模型
-    // 但 GPT-Image-2 模式下不做强制替换（该模型支持文生图和图生图）
-    const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
+    const actualModel = isImg2Img && !isVideo
+      ? (isGpt2Model ? finalModel : DEFAULT_GPT_IMAGE2_MODEL_NAME)
+      : finalModel;
+
+    if (isImg2Img && !isVideo && !isGpt2Model) {
+      if (isAgnes) {
+        return respond({ error: "图生图功能暂不支持 Agnes 模型，请使用 GPT-Image-2 模式" }, 400);
+      }
+      if (isGrokImagineModel(finalModel)) {
+        return respond({ error: "图生图功能暂不支持 Grok 模型，请使用 GPT-Image-2 模式" }, 400);
+      }
+    }
     
     const hasReferenceImages = Array.isArray(reference_images) && reference_images.length > 0 && !isVideo;
     // GPT-Image-2 使用 chat/completions 端点，不需要 images/generations
@@ -482,9 +528,8 @@ export async function POST(req: Request) {
     const isGpt2 = modelName && /gpt-image-2/i.test(modelName);
     const getTimeout = (isVideo: boolean, isImg2Img: boolean) => {
       if (isVideo) return VIDEO_MAX_WAIT_MS;
-      if (isGpt2) return 300000; // GPT-Image-2：300秒（5分钟），模型响应较慢，文生图和图生图都适用
-      if (isImg2Img) return 60000; // 图生图：60秒
-      return 45000; // 文生图：45秒
+      if (isGpt2 || isImg2Img) return 300000;
+      return 90000;
     };
     const controller = new AbortController();
     const timeoutMs = getTimeout(isVideo, isImg2Img);
@@ -754,26 +799,30 @@ export async function POST(req: Request) {
       const validRefImages: string[] = [];
       if (Array.isArray(reference_images) && reference_images.length > 0 && !isVideo) {
         const refsToProcess = reference_images.slice(0, 2);
-        for (const ref of refsToProcess) {
-          if (typeof ref !== 'string' || !ref.trim()) continue;
+        const refPromises = refsToProcess.map(async (ref: string) => {
+          if (typeof ref !== 'string' || !ref.trim()) return null;
           const refTrimmed = ref.trim();
-          if (refTrimmed.startsWith('data:image/')) {
-            validRefImages.push(refTrimmed);
-          } else if (refTrimmed.startsWith('http://') || refTrimmed.startsWith('https://')) {
+          if (refTrimmed.startsWith('data:image/')) return refTrimmed;
+          if (refTrimmed.startsWith('http://') || refTrimmed.startsWith('https://')) {
             try {
               const refCtrl = new AbortController();
-              const refTimeoutId = setTimeout(() => refCtrl.abort(), 20000);
+              const refTimeoutId = setTimeout(() => refCtrl.abort(), 15000);
               const refRes = await fetch(refTrimmed, { signal: refCtrl.signal });
               clearTimeout(refTimeoutId);
-              if (!refRes.ok) continue;
+              if (!refRes.ok) return null;
               const refBuf = Buffer.from(await refRes.arrayBuffer());
-              if (refBuf.length > 10 * 1024 * 1024) continue;
+              if (refBuf.length > 10 * 1024 * 1024) return null;
               const refMime = refRes.headers.get('content-type') || 'image/jpeg';
-              validRefImages.push(`data:${refMime};base64,${refBuf.toString('base64')}`);
+              return `data:${refMime};base64,${refBuf.toString('base64')}`;
             } catch (_e) {
-              continue;
+              return null;
             }
           }
+          return null;
+        });
+        const refResults = await Promise.all(refPromises);
+        for (const r of refResults) {
+          if (r) validRefImages.push(r);
         }
       }
 
@@ -1068,34 +1117,38 @@ export async function POST(req: Request) {
       const maxNoImageRetry = !isVideo && !useImagesGenerationApi ? 2 : 0;
       let noImageRetryCount = 0;
       let badGatewayRetryCount = 0;
-      const maxBadGatewayRetry = 3;
+      const maxBadGatewayRetry = 2;
       let serverErrorRetryCount = 0;
       const maxServerErrorRetry = isGpt2Model ? 2 : 1;
 
-      response = await doRequest(activePayload);
-
-      // 重试逻辑
-      for (let attempt = 0; attempt < 8; attempt++) {
-        if (attempt > 0 || !response) {
+      const maxAttempts = 6;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
           response = await doRequest(activePayload);
+        } catch (reqErr: any) {
+          if (reqErr.name === 'AbortError') throw reqErr;
+          lastErrorText = reqErr.message || 'Network error';
+          if (attempt < maxAttempts - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
+          break;
         }
         const responseText = await response.text();
 
-        // Check for 502 or Bad Gateway explicitly and retry
         if (!response.ok && (response.status === 502 || responseText.includes("Bad Gateway") || responseText.includes("blocked or no valid final image"))) {
            if (badGatewayRetryCount < maxBadGatewayRetry) {
              badGatewayRetryCount++;
              lastErrorText = responseText;
-             await new Promise(resolve => setTimeout(resolve, 2000));
+             await new Promise(resolve => setTimeout(resolve, 800));
              continue;
            }
         }
 
-        // Check for 500 Internal Server Error with exponential backoff
         if (!response.ok && response.status === 500 && serverErrorRetryCount < maxServerErrorRetry) {
           serverErrorRetryCount++;
           lastErrorText = responseText;
-          const backoffMs = Math.min(3000 * Math.pow(2, serverErrorRetryCount - 1), 15000);
+          const backoffMs = Math.min(2000 * Math.pow(2, serverErrorRetryCount - 1), 10000);
           console.warn(`[generate-image] 500 error, retry ${serverErrorRetryCount}/${maxServerErrorRetry} after ${backoffMs}ms`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
           continue;
@@ -1209,11 +1262,10 @@ export async function POST(req: Request) {
           continue;
         }
 
-        // GPT-Image-2 429 rate limit: backoff and retry with delay
         if (!isVideo && isGpt2Model && response.status === 429) {
           if (!didKeyRetry) {
             didKeyRetry = true;
-            const backoffMs = 10000;
+            const backoffMs = 6000;
             console.warn(`[generate-image] GPT-Image-2 rate limited (429), retrying after ${backoffMs}ms`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             continue;
@@ -1273,7 +1325,7 @@ export async function POST(req: Request) {
       }
 
       const responseText = String(finalData?.choices?.[0]?.message?.content ?? '').slice(0, 2000);
-      await prisma.generationLog.create({
+      prisma.generationLog.create({
         data: {
           type: isVideo ? 'VIDEO' : 'IMAGE',
           userId: user?.id ?? null,
@@ -1285,23 +1337,18 @@ export async function POST(req: Request) {
           responseText,
           success: true
         }
-      });
-      
-      // 生成成功后，如果使用的是默认 Key，则更新用户的限制数据
-      if (!apiKey) {
-        if (authHeader) {
-          if (decoded && decoded.userId) {
-            await prisma.user.update({
-              where: { id: decoded.userId },
-              data: {
-                imageCount: { increment: 1 },
-                dailyImageCount: { increment: 1 },
-                lastImageGeneratedAt: new Date(),
-                lastDailyReset: new Date() // 确保日期更新
-              }
-            });
+      }).catch(err => console.error('[generate-image] log failed:', err));
+
+      if (!apiKey && authHeader && decoded?.userId) {
+        prisma.user.update({
+          where: { id: decoded.userId },
+          data: {
+            imageCount: { increment: 1 },
+            dailyImageCount: { increment: 1 },
+            lastImageGeneratedAt: new Date(),
+            lastDailyReset: new Date()
           }
-        }
+        }).catch(err => console.error('[generate-image] user update failed:', err));
       }
 
       if (!isVideo && !mediaUrl) {
