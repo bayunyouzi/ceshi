@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle, Sun, Moon, Zap } from "lucide-react";
+import { Copy, RefreshCw, Wand2, Settings, Save, Sparkles, Image as ImageIcon, Shield, ShieldAlert, Users, User, Brain, Video, Heart, X, Trophy, MessageCircle, Sun, Moon, Zap, Download } from "lucide-react";
 
 import { getRandomTags } from "../lib/utils";
 import { img2ImgPrompts, img2ImgEffectOptions } from "../lib/img2imgPrompts";
@@ -38,6 +38,7 @@ export default function Home() {
   const [isImg2ImgMode, setIsImg2ImgMode] = useState(false); // 新增图生图模式
   const [isGptImage2Mode, setIsGptImage2Mode] = useState(false); // GPT-Image-2 模型切换
   const [uploadedImage, setUploadedImage] = useState<string | null>(null); // 上传图片
+  const [referenceImages, setReferenceImages] = useState<string[]>([]); // GPT模式参考图（最多2张）
   const [img2ImgEffect, setImg2ImgEffect] = useState('random'); // 图生图效果
   const [img2ImgInput, setImg2ImgInput] = useState(""); // 图生图手动需求
   const [isSafeMode, setIsSafeMode] = useState(true);
@@ -660,6 +661,63 @@ Example Output:
     img.src = objectUrl;
   };
 
+  const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const remaining = 2 - referenceImages.length;
+    if (remaining <= 0) return;
+
+    const filesToProcess = Array.from(files).slice(0, remaining);
+    filesToProcess.forEach((file) => {
+      const MAX_SIZE = 1024;
+      const JPEG_QUALITY = 0.8;
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        let { width, height } = img;
+        if (width > MAX_SIZE || height > MAX_SIZE) {
+          if (width > height) {
+            height = Math.round((height / width) * MAX_SIZE);
+            width = MAX_SIZE;
+          } else {
+            width = Math.round((width / height) * MAX_SIZE);
+            height = MAX_SIZE;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setReferenceImages((prev) => prev.length < 2 ? [...prev, reader.result as string] : prev);
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+        setReferenceImages((prev) => prev.length < 2 ? [...prev, compressed] : prev);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setReferenceImages((prev) => prev.length < 2 ? [...prev, reader.result as string] : prev);
+        };
+        reader.readAsDataURL(file);
+      };
+      img.src = objectUrl;
+    });
+    e.target.value = '';
+  };
+
+  const removeReferenceImage = (index: number) => {
+    setReferenceImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const isRenderableImageRef = (value: unknown): value is string => {
     if (typeof value !== "string") return false;
     const text = value.trim();
@@ -790,8 +848,52 @@ Example Output:
       const blobUrl = URL.createObjectURL(blob);
       window.open(blobUrl, '_blank');
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } else if (!isVideo && /^https?:\/\//i.test(url)) {
+      const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}`;
+      window.open(proxyUrl, '_blank');
     } else {
       window.open(url, '_blank', 'noreferrer');
+    }
+  };
+
+  const handleDownloadImage = async (url: string) => {
+    if (!url) return;
+    try {
+      let blob: Blob;
+      let ext = 'png';
+      if (url.startsWith('data:')) {
+        const [header, base64Data] = url.split(',');
+        const mimeMatch = header.match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+        if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
+        else if (mime.includes('webp')) ext = 'webp';
+        else if (mime.includes('png')) ext = 'png';
+        const binary = atob(base64Data);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+        blob = new Blob([array], { type: mime });
+      } else {
+        const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}`;
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error('下载失败');
+        blob = await res.blob();
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('jpeg') || ct.includes('jpg')) ext = 'jpg';
+        else if (ct.includes('webp')) ext = 'webp';
+        else if (ct.includes('png')) ext = 'png';
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `ai-image-${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (_e) {
+      setError('图片下载失败，请稍后重试');
     }
   };
 
@@ -860,6 +962,7 @@ Example Output:
           prompt,
           modelName: effectiveModel,
           aspectRatio: imageAspectRatio,
+          ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
           ...apiConfig
         }),
         signal: controller.signal
@@ -1044,7 +1147,7 @@ Example Output:
       lastImg2ImgAtRef.current = now;
 
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
-      const effectiveModel = isAgnesMode ? AGNES_IMG2IMG_MODEL : (useCustomApi ? (imageModelName || "grok-imagine-image-edit") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : "grok-imagine-image-edit"));
+      const effectiveModel = isAgnesMode ? AGNES_IMG2IMG_MODEL : (useCustomApi ? (imageModelName || GPT_IMAGE_2_MODEL) : GPT_IMAGE_2_MODEL);
       const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/images/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
 
       const token = localStorage.getItem("auth_token");
@@ -1059,6 +1162,7 @@ Example Output:
           image_url: uploadedImage,
           modelName: effectiveModel,
           aspectRatio: imageAspectRatio,
+          ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
           ...apiConfig
         }),
         signal: controller.signal
@@ -1647,7 +1751,7 @@ Example Output:
                     className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-bold transition-all border ${isGptImage2Mode ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : (isVideoMode || isTxt2VideoMode) ? "bg-theme-bg-card border-theme-border-strong text-theme-text-placeholder cursor-not-allowed" : "bg-theme-bg-card border-theme-border-strong text-theme-text-muted hover:bg-theme-bg-card-hover hover:text-amber-300 hover:border-amber-500/30"}`}
                   >
                     <ImageIcon className="w-4 h-4" />
-                    {isGptImage2Mode ? (isImg2ImgMode ? "GPT-Image-2: 仅文生图" : "GPT-Image-2 文生图: 已开启") : "GPT-Image-2: 点击切换"}
+                    {isGptImage2Mode ? (isImg2ImgMode ? "GPT-Image-2 图生图: 已开启" : "GPT-Image-2 文生图: 已开启") : "GPT-Image-2: 点击切换"}
                   </button>
                   {isGptImage2Mode && (
                     <div className="border rounded-xl p-2.5 bg-amber-500/10 border-amber-500/20">
@@ -1785,6 +1889,36 @@ Example Output:
                     />
                   </div>
 
+                  {isGptImage2Mode && (
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest mb-2">
+                        <span>风格参考图（可选，最多2张）</span>
+                        <span className="text-theme-text-placeholder">{referenceImages.length}/2</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {referenceImages.map((img, idx) => (
+                          <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-theme-border-strong group">
+                            <img src={img} alt={`Ref ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removeReferenceImage(idx)}
+                              className="absolute top-1 right-1 w-5 h-5 bg-black/70 hover:bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {referenceImages.length < 2 && (
+                          <label className="w-20 h-20 rounded-xl border-2 border-dashed border-theme-border-strong bg-theme-bg-input hover:border-rose-500/50 hover:bg-theme-bg-card-hover flex flex-col items-center justify-center cursor-pointer transition-all">
+                            <ImageIcon className="w-5 h-5 text-theme-text-muted mb-1" />
+                            <span className="text-[9px] text-theme-text-muted">添加</span>
+                            <input type="file" accept="image/*" multiple onChange={handleReferenceImageUpload} className="hidden" />
+                          </label>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-theme-text-placeholder mt-1.5">AI 会参考这些图片的风格来生成</p>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleImg2ImgSubmit}
                     disabled={imageLoading}
@@ -1868,9 +2002,16 @@ Example Output:
                   {isTxt2VideoMode ? "视频预览 / Preview" : "出图预览 / Preview"}
                 </span>
                 {(isTxt2VideoMode ? generatedVideo : generatedImage) && (
-                  <button onClick={() => handleViewMedia((isTxt2VideoMode ? generatedVideo : generatedImage) || '', isTxt2VideoMode)} className="text-theme-text-secondary hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
-                    {isTxt2VideoMode ? "查看视频 ↗" : "查看原图 ↗"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleViewMedia((isTxt2VideoMode ? generatedVideo : generatedImage) || '', isTxt2VideoMode)} className="text-theme-text-secondary hover:text-theme-text-primary transition-colors bg-theme-bg-card px-3 py-1 rounded-lg">
+                      {isTxt2VideoMode ? "查看视频 ↗" : "查看原图 ↗"}
+                    </button>
+                    {!isTxt2VideoMode && generatedImage && (
+                      <button onClick={() => handleDownloadImage(generatedImage)} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-colors bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1 rounded-lg border border-emerald-500/20">
+                        <Download className="w-3.5 h-3.5" /> 保存原图
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               {!isTxt2VideoMode && imageMeta?.displayModel && (
@@ -1902,6 +2043,35 @@ Example Output:
                       ))}
                     </div>
                   </div>
+                  {isGptImage2Mode && (
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest mb-2">
+                        <span>参考图（可选，最多2张）</span>
+                        <span className="text-theme-text-placeholder">{referenceImages.length}/2</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {referenceImages.map((img, idx) => (
+                          <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-theme-border-strong group">
+                            <img src={img} alt={`Ref ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removeReferenceImage(idx)}
+                              className="absolute top-1 right-1 w-5 h-5 bg-black/70 hover:bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {referenceImages.length < 2 && (
+                          <label className="w-20 h-20 rounded-xl border-2 border-dashed border-theme-border-strong bg-theme-bg-input hover:border-amber-500/50 hover:bg-theme-bg-card-hover flex flex-col items-center justify-center cursor-pointer transition-all">
+                            <ImageIcon className="w-5 h-5 text-theme-text-muted mb-1" />
+                            <span className="text-[9px] text-theme-text-muted">添加</span>
+                            <input type="file" accept="image/*" multiple onChange={handleReferenceImageUpload} className="hidden" />
+                          </label>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-theme-text-placeholder mt-1.5">AI 会参考这些图片的风格和内容来生成</p>
+                    </div>
+                  )}
                   <button 
                     onClick={() => handleGenerateImage(result.prompt)}
                     disabled={imageLoading}

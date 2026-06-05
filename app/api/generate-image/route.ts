@@ -353,7 +353,7 @@ export async function POST(req: Request) {
   };
 
   try {
-    const { prompt, image_url, apiKey, apiEndpoint, modelName, mediaType, duration, aspectRatio } = await req.json();
+    const { prompt, image_url, reference_images, apiKey, apiEndpoint, modelName, mediaType, duration, aspectRatio } = await req.json();
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     const decoded = token ? verifyToken(token) : null;
@@ -384,8 +384,10 @@ export async function POST(req: Request) {
     // 但 GPT-Image-2 模式下不做强制替换（该模型支持文生图和图生图）
     const actualModel = isImg2Img && !modelName && !isGpt2Model ? DEFAULT_IMG2IMG_MODEL_NAME : finalModel;
     
+    const hasReferenceImages = Array.isArray(reference_images) && reference_images.length > 0 && !isVideo;
     // GPT-Image-2 使用 chat/completions 端点，不需要 images/generations
-    const useImagesGenerationApi = !isVideo && !isGpt2Model && isImagesGenerationEndpoint(finalEndpoint);
+    // 有参考图时也强制使用 chat/completions 格式（支持多图）
+    const useImagesGenerationApi = !isVideo && !isGpt2Model && !hasReferenceImages && isImagesGenerationEndpoint(finalEndpoint);
     // 图生图使用 /images/edits 端点
     // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
     const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
@@ -749,6 +751,32 @@ export async function POST(req: Request) {
       let messages: any[] = [];
       let finalImageUrl = image_url;
 
+      const validRefImages: string[] = [];
+      if (Array.isArray(reference_images) && reference_images.length > 0 && !isVideo) {
+        const refsToProcess = reference_images.slice(0, 2);
+        for (const ref of refsToProcess) {
+          if (typeof ref !== 'string' || !ref.trim()) continue;
+          const refTrimmed = ref.trim();
+          if (refTrimmed.startsWith('data:image/')) {
+            validRefImages.push(refTrimmed);
+          } else if (refTrimmed.startsWith('http://') || refTrimmed.startsWith('https://')) {
+            try {
+              const refCtrl = new AbortController();
+              const refTimeoutId = setTimeout(() => refCtrl.abort(), 20000);
+              const refRes = await fetch(refTrimmed, { signal: refCtrl.signal });
+              clearTimeout(refTimeoutId);
+              if (!refRes.ok) continue;
+              const refBuf = Buffer.from(await refRes.arrayBuffer());
+              if (refBuf.length > 10 * 1024 * 1024) continue;
+              const refMime = refRes.headers.get('content-type') || 'image/jpeg';
+              validRefImages.push(`data:${refMime};base64,${refBuf.toString('base64')}`);
+            } catch (_e) {
+              continue;
+            }
+          }
+        }
+      }
+
       // 根据是否有图片传入，决定使用什么 payload
       if (image_url && !isVideo) {
         // 图生图模式：使用标准的 OpenAI Vision API 格式
@@ -889,17 +917,36 @@ export async function POST(req: Request) {
                 image_url: {
                   url: finalImageUrl
                 }
-              }
+              },
+              ...validRefImages.map(ref => ({
+                type: "image_url",
+                image_url: { url: ref }
+              }))
             ]
           }
         ];
       } else {
-        messages = [
-          {
-            role: "user",
-            content: isVideo ? `${finalPrompt}\n\nGenerate a ${videoDuration}-second video.` : finalPrompt
-          }
-        ];
+        if (!isVideo && validRefImages.length > 0) {
+          messages = [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: finalPrompt },
+                ...validRefImages.map(ref => ({
+                  type: "image_url",
+                  image_url: { url: ref }
+                }))
+              ]
+            }
+          ];
+        } else {
+          messages = [
+            {
+              role: "user",
+              content: isVideo ? `${finalPrompt}\n\nGenerate a ${videoDuration}-second video.` : finalPrompt
+            }
+          ];
+        }
       }
 
       let requestPayload: any;
@@ -1103,14 +1150,13 @@ export async function POST(req: Request) {
             } else {
               let retryMessages: any[] = [{ role: "user", content: reinforcedPrompt }];
               if (isImg2Img && messages[0]?.content && Array.isArray(messages[0].content)) {
-                // Preserve the image_url block for img2img retries
-                const imageBlock = messages[0].content.find((c: any) => c.type === "image_url");
-                if (imageBlock) {
+                const imageBlocks = messages[0].content.filter((c: any) => c.type === "image_url");
+                if (imageBlocks.length > 0) {
                   retryMessages = [{
                     role: "user",
                     content: [
                       { type: "text", text: reinforcedPrompt },
-                      imageBlock
+                      ...imageBlocks
                     ]
                   }];
                 }
