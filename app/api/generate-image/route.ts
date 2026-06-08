@@ -25,7 +25,15 @@ const DEFAULT_IMG2IMG_API_KEY = DEFAULT_GROK2API_KEY;
 const DEFAULT_IMG2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;
 const DEFAULT_IMG2IMG_MODEL_NAME = "grok-imagine-image-edit";
 // GPT-Image-2 默认配置 - 使用独立的 API Key
-const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
+const GPT_IMAGE2_API_KEY_FALLBACK = "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
+const INVALID_GPT_IMAGE2_API_KEYS = new Set([
+  "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo",
+  "f5f8dc3f65454077b2fd6560"
+]);
+const configuredGptImage2ApiKey = process.env.GPT_IMAGE2_API_KEY?.trim();
+const DEFAULT_GPT_IMAGE2_API_KEY = configuredGptImage2ApiKey && !INVALID_GPT_IMAGE2_API_KEYS.has(configuredGptImage2ApiKey)
+  ? configuredGptImage2ApiKey
+  : GPT_IMAGE2_API_KEY_FALLBACK;
 const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/images/generations";
 const DEFAULT_GPT_IMAGE2_MODEL_NAME = "gpt-image-2";
 
@@ -437,10 +445,10 @@ export async function POST(req: Request) {
     const defaultEndpoint = isVideo ? DEFAULT_TXT2VIDEO_API_ENDPOINT : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_ENDPOINT : (isImg2Img ? DEFAULT_IMG2IMG_API_ENDPOINT : DEFAULT_TXT2IMG_API_ENDPOINT));
     const defaultModel = isVideo ? DEFAULT_TXT2VIDEO_MODEL_NAME : (isImg2Img ? DEFAULT_IMG2IMG_MODEL_NAME : DEFAULT_TXT2IMG_MODEL_NAME);
 
-    let finalApiKey = apiKey || defaultApiKey;
+    let finalApiKey = isGpt2Model ? DEFAULT_GPT_IMAGE2_API_KEY : (apiKey || defaultApiKey);
     let finalEndpoint = isVideo
       ? (apiEndpoint || defaultEndpoint)
-      : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img);
+      : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_ENDPOINT : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img));
     const finalModel = isVideo ? (modelName || DEFAULT_TXT2VIDEO_MODEL_NAME) : (modelName || defaultModel);
     const actualModel = isImg2Img && !isVideo
       ? (isGpt2Model ? finalModel : DEFAULT_GPT_IMAGE2_MODEL_NAME)
@@ -476,7 +484,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const canAutoSwitchImageKey = !apiKey && !isVideo && useImagesGenerationApi;
+    const canAutoSwitchImageKey = !isGpt2Model && !apiKey && !isVideo && useImagesGenerationApi;
     if (canAutoSwitchImageKey) {
       const { start, end } = getChinaDayRange();
       const todayAutoImageCount = await prisma.generationLog.count({
@@ -498,7 +506,7 @@ export async function POST(req: Request) {
 
     // 检查限制逻辑
     // 只有当用户没有提供自定义 Key 时，才应用限制
-    if (!apiKey && !isVideo) {
+    if (!isGpt2Model && !apiKey && !isVideo) {
       // 获取用户信息 (假设前端传了 Authorization header)
       const authHeader = req.headers.get('Authorization');
       if (authHeader) {

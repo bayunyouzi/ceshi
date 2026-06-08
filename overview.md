@@ -1,26 +1,25 @@
-# GPT-Image-2 分辨率按钮更新概览
+# GPT-Image-2 401 密钥错误修复概览
 
-## 已验证
-- 新 GPT-Image-2 生图接口支持 `2048x2048`，实测 2K 返回 200 且拿到图片结果。
-- `4096x4096` 不支持，接口报错：最长边不能超过 3840。
-- `3840x3840` 不支持，接口报错：超过当前像素预算。
-- `3840x2160` 支持，实测返回 200 且拿到图片结果。
-- 因此这里的 4K 不能做正方形 4096，而是按接口可用的 4K 横/竖图处理。
+## 问题原因
+- 报错为 `401 INVALID_API_KEY`，不是分辨率按钮导致的尺寸问题。
+- 后端 `generate-image` 里有一段“自动切换免费/备用图片 Key”的逻辑：只要请求没显式传 `apiKey` 且走 `/images/generations`，就会把 `finalApiKey` 替换成旧 Grok 图片 Key。
+- GPT-Image-2 文生图现在正好也是 `/images/generations`，所以被误伤，最终拿旧 Key 去请求 `yzgpt`，导致 `INVALID_API_KEY`。
+- 如果线上环境变量 `GPT_IMAGE2_API_KEY` 还残留旧 Key，也会导致同样问题。
 
-## 已完成
-- 在 GPT-Image-2 模式下增加清晰度按钮：`1K`、`2K`、`4K`。
-- 选择会保存到当前模式的本地配置中。
-- 生图请求现在会携带 `resolution` 参数给后端。
-- 后端 `generate-image` 会根据比例和清晰度计算最终 size：
-  - 1K：沿用原比例尺寸，例如 `1024x1024`、`1536x1024`、`1024x1536`
-  - 2K：按比例放大，例如 `2048x2048`
-  - 4K：使用接口实测可用规格，横图 `3840x2160`，竖图 `2160x3840`
-- 4K 模式下前端会限制比例为 `3:2` 或 `2:3`，避免用户选择正方形导致接口必然报错。
-
-## 修改文件
-- `app/page.tsx`
-- `app/api/generate-image/route.ts`
+## 已修复
+- `app/api/generate-image/route.ts` 中 GPT-Image-2 请求现在强制使用 GPT-Image-2 专用 Key 和专用 endpoint。
+- GPT-Image-2 不再进入旧 Grok 图片 Key 自动切换逻辑。
+- GPT-Image-2 不再进入旧图片额度限制/Key 替换逻辑。
+- 对已知旧 Key 做了保护：如果 `GPT_IMAGE2_API_KEY` 环境变量仍是旧 Grok Key 或旧短 Key，会自动忽略，回退到新 yzgpt Key。
+- Grok 模式未改，旧 Grok 生图仍保留原来的 Key 轮换逻辑。
 
 ## 验证结果
+- 直连 `https://yzgpt.zeabur.app/v1/images/generations` 使用新 Key 实测返回 200，并拿到图片结果。
 - `npm run build` 构建成功。
-- `tsc --noEmit` 仍有项目既有类型错误，和本次分辨率按钮改动无关。
+
+## 修改文件
+- `app/api/generate-image/route.ts`
+
+## 部署注意
+- 需要重新部署线上服务后才生效。
+- 建议 Zeabur 环境变量里把 `GPT_IMAGE2_API_KEY` 设置为新 Key，或者删除旧的 `GPT_IMAGE2_API_KEY`，避免旧配置继续覆盖。当前代码已做旧 Key 兜底保护，但线上重新构建/重启仍是必须的。
