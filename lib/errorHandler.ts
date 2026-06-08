@@ -149,6 +149,7 @@ const ALLOWED_PROMPT_MODELS = [
   'grok-4.20-0309-reasoning',
   'grok-4.20-0309-non-reasoning',
   'openai/gpt-oss-120b',
+  'gpt-5.5',
 ];
 
 // 验证模型是否在白名单中

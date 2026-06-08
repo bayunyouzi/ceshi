@@ -28,7 +28,7 @@ const isImagesGenerationEndpoint = (endpoint) => {
 };
 
 // 模拟 GPT-Image-2 的请求
-const apiEndpoint = "https://gpt2.zeabur.app/v1";
+const apiEndpoint = "https://yzgpt.zeabur.app/v1/images/generations";
 const fallback = "http://default.endpoint/v1/chat/completions";
 const finalEndpoint = normalizeEndpoint(apiEndpoint, fallback, "image", false);
 

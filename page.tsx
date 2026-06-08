@@ -63,8 +63,8 @@ export default function Home() {
 
   // GPT-Image-2 模型配置
   const [isGptImage2Mode, setIsGptImage2Mode] = useState(false);
-  const GPTIMAGE2_API_ENDPOINT = "https://gpt2.zeabur.app/v1";
-  const GPTIMAGE2_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
+  const GPTIMAGE2_API_ENDPOINT = "https://yzgpt.zeabur.app/v1/images/generations";
+  const GPTIMAGE2_API_KEY = "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
   const GPTIMAGE2_MODEL_NAME = "gpt-image-2";
   const GPTIMAGE2_DAILY_LIMIT = 50;
   const [gptImage2Remaining, setGptImage2Remaining] = useState(GPTIMAGE2_DAILY_LIMIT);

@@ -25,8 +25,8 @@ const DEFAULT_IMG2IMG_API_KEY = DEFAULT_GROK2API_KEY;
 const DEFAULT_IMG2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;
 const DEFAULT_IMG2IMG_MODEL_NAME = "grok-imagine-image-edit";
 // GPT-Image-2 默认配置 - 使用独立的 API Key
-const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
+const DEFAULT_GPT_IMAGE2_API_KEY = process.env.GPT_IMAGE2_API_KEY || "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
+const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/images/generations";
 const DEFAULT_GPT_IMAGE2_MODEL_NAME = "gpt-image-2";
 
 const DEFAULT_TXT2VIDEO_API_KEY = process.env.XAI_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
@@ -346,6 +346,31 @@ const ASPECT_RATIO_SIZES: Record<string, { width: number; height: number }> = {
   // "auto" 不在映射中，让模型自动决定尺寸
 };
 
+const GPT_IMAGE_RESOLUTION_SCALE: Record<string, number> = {
+  "1K": 1,
+  "2K": 2,
+  "4K": 3.75
+};
+
+const getImageSize = (aspectKey: string, resolution: unknown, isGpt2Model: boolean) => {
+  const baseSize = aspectKey && ASPECT_RATIO_SIZES[aspectKey] ? ASPECT_RATIO_SIZES[aspectKey] : null;
+  if (!baseSize) return null;
+
+  if (!isGpt2Model) return baseSize;
+
+  const normalizedResolution = typeof resolution === "string" ? resolution.trim().toUpperCase() : "1K";
+  if (normalizedResolution === "4K") {
+    if (aspectKey === "2:3") return { width: 2160, height: 3840 };
+    return { width: 3840, height: 2160 };
+  }
+
+  const scale = GPT_IMAGE_RESOLUTION_SCALE[normalizedResolution] || 1;
+  return {
+    width: Math.round(baseSize.width * scale),
+    height: Math.round(baseSize.height * scale)
+  };
+};
+
 export async function POST(req: Request) {
   cleanupExpiredIdempotency();
   const idempotencyKey = normalizeIdempotencyKey(req.headers.get("Idempotency-Key") || req.headers.get("X-Idempotency-Key"));
@@ -390,7 +415,7 @@ export async function POST(req: Request) {
   };
 
   try {
-    const { prompt, image_url, reference_images, apiKey, apiEndpoint, modelName, mediaType, duration, aspectRatio } = await req.json();
+    const { prompt, image_url, reference_images, apiKey, apiEndpoint, modelName, mediaType, duration, aspectRatio, resolution } = await req.json();
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     const decoded = token ? verifyToken(token) : null;
@@ -431,9 +456,8 @@ export async function POST(req: Request) {
     }
     
     const hasReferenceImages = Array.isArray(reference_images) && reference_images.length > 0 && !isVideo;
-    // GPT-Image-2 使用 chat/completions 端点，不需要 images/generations
-    // 有参考图时也强制使用 chat/completions 格式（支持多图）
-    const useImagesGenerationApi = !isVideo && !isGpt2Model && !hasReferenceImages && isImagesGenerationEndpoint(finalEndpoint);
+    // GPT-Image-2 新接口使用 /images/generations，支持文生图，也可携带单图参考
+    const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint) && (!hasReferenceImages || isGpt2Model);
     // 图生图使用 /images/edits 端点
     // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
     const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
@@ -466,7 +490,8 @@ export async function POST(req: Request) {
       finalApiKey = todayAutoImageCount < FREE_IMG_DAILY_LIMIT ? DEFAULT_FREE_IMG_API_KEY : DEFAULT_BACKUP_IMG_API_KEY;
     }
     const aspectKey = typeof aspectRatio === "string" ? aspectRatio.trim() : "";
-    const aspectSize = !isVideo && aspectKey && ASPECT_RATIO_SIZES[aspectKey] ? ASPECT_RATIO_SIZES[aspectKey] : null;
+    const requestedResolution = typeof resolution === "string" ? resolution.trim().toUpperCase() : "1K";
+    const aspectSize = !isVideo ? getImageSize(aspectKey, requestedResolution, Boolean(isGpt2Model)) : null;
     const finalPrompt = aspectSize
       ? `${prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
       : prompt;
@@ -1020,12 +1045,13 @@ export async function POST(req: Request) {
           response_format: "url",
           size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`
         };
-        if (image_url && !isVideo) {
+        const referenceImageForGeneration = image_url ? finalImageUrl : (isGpt2Model ? validRefImages[0] : null);
+        if (referenceImageForGeneration && !isVideo) {
           if (isAgnes) {
-            requestPayload.image = finalImageUrl;
+            requestPayload.image = referenceImageForGeneration;
           } else {
-            requestPayload.image = finalImageUrl;
-            requestPayload.image_url = finalImageUrl;
+            requestPayload.image = referenceImageForGeneration;
+            requestPayload.image_url = referenceImageForGeneration;
           }
         }
       } else {
@@ -1337,7 +1363,7 @@ export async function POST(req: Request) {
           responseText,
           success: true
         }
-      }).catch(err => console.error('[generate-image] log failed:', err));
+      }).catch((err: unknown) => console.error('[generate-image] log failed:', err));
 
       if (!apiKey && authHeader && decoded?.userId) {
         prisma.user.update({
@@ -1348,16 +1374,16 @@ export async function POST(req: Request) {
             lastImageGeneratedAt: new Date(),
             lastDailyReset: new Date()
           }
-        }).catch(err => console.error('[generate-image] user update failed:', err));
+        }).catch((err: unknown) => console.error('[generate-image] user update failed:', err));
       }
 
       if (!isVideo && !mediaUrl) {
         return respond({ error: "未识别到图片结果，请稍后重试或更换提示词。" }, 502);
       }
 
-      // 修复 gpt2.zeabur.app 返回 http:// URL 的问题，替换为 https://
-      if (mediaUrl && typeof mediaUrl === 'string' && mediaUrl.startsWith('http://gpt2.zeabur.app/')) {
-        mediaUrl = mediaUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+      // 修复 GPT-Image-2 接口返回 http:// URL 的问题，替换为 https://
+      if (mediaUrl && typeof mediaUrl === 'string' && mediaUrl.startsWith('http://yzgpt.zeabur.app/')) {
+        mediaUrl = mediaUrl.replace('http://yzgpt.zeabur.app/', 'https://yzgpt.zeabur.app/');
       }
 
       return respond(buildImageClientPayload(finalData, mediaUrl!, actualModel, activeModel), 200);

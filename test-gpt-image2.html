@@ -170,11 +170,11 @@
                 <h3>📝 请求配置</h3>
                 <div class="form-group">
                     <label>API Endpoint:</label>
-                    <input type="text" id="apiEndpoint" value="https://gpt2.zeabur.app/v1/images/generations">
+                    <input type="text" id="apiEndpoint" value="https://yzgpt.zeabur.app/v1/images/generations">
                 </div>
                 <div class="form-group">
                     <label>API Key:</label>
-                    <input type="text" id="apiKey" value="f5f8dc3f65454077b2fd6560">
+                    <input type="text" id="apiKey" value="sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa">
                 </div>
                 <div class="form-group">
                     <label>Model:</label>
@@ -317,8 +317,8 @@
                 
                 if (imageUrl) {
                     // 修复 http 为 https
-                    if (imageUrl.startsWith('http://gpt2.zeabur.app/')) {
-                        imageUrl = imageUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+                    if (imageUrl.startsWith('http://yzgpt.zeabur.app/')) {
+                        imageUrl = imageUrl.replace('http://yzgpt.zeabur.app/', 'https://yzgpt.zeabur.app/');
                         log('已修复 http 为 https', 'warning');
                     }
                     
@@ -374,8 +374,8 @@
                 const payload = {
                     prompt: prompt,
                     aspectRatio: "1:1",
-                    apiKey: "f5f8dc3f65454077b2fd6560",
-                    apiEndpoint: "https://gpt2.zeabur.app/v1",
+                    apiKey: "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa",
+                    apiEndpoint: "https://yzgpt.zeabur.app/v1/images/generations",
                     modelName: "gpt-image-2"
                 };
                 

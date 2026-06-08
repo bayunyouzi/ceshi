@@ -12,9 +12,12 @@ export default function Home() {
   const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
   // GPT-Image-2 配置 - 使用独立的 API Key
-  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://gpt2.zeabur.app/v1/chat/completions";
+  const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
+  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/images/generations";
   const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
+  const GPT_PROMPT_API_KEY = process.env.NEXT_PUBLIC_GPT_PROMPT_API_KEY || GPT_IMAGE_2_API_KEY;
+  const GPT_PROMPT_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_PROMPT_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/chat/completions";
+  const GPT_PROMPT_MODEL = process.env.NEXT_PUBLIC_GPT_PROMPT_MODEL || "gpt-5.5";
   const FRONTEND_IMG_API_KEY = process.env.NEXT_PUBLIC_IMG_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
   const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "http://bayunzi.shop/v1/chat/completions";
   const FRONTEND_IMG_MODEL_NAME = process.env.NEXT_PUBLIC_IMG_MODEL_NAME || "grok-imagine-image-lite";
@@ -86,7 +89,14 @@ export default function Home() {
     "2:3": "1024x1536",
     "auto": "auto"
   };
+  const gptResolutionOptions = [
+    { id: "1K", label: "1K", note: "默认" },
+    { id: "2K", label: "2K", note: "可用" },
+    { id: "4K", label: "4K", note: "横/竖" }
+  ] as const;
+  type GptResolutionOption = (typeof gptResolutionOptions)[number]["id"];
   const [imageAspectRatio, setImageAspectRatio] = useState<AspectRatioOption>("1:1");
+  const [gptImageResolution, setGptImageResolution] = useState<GptResolutionOption>("1K");
   const imageAspectRatioCss = imageAspectRatio === "auto" ? "1 / 1" : imageAspectRatio.replace(":", " / ");
   const imagePreviewStyle = !isTxt2VideoMode ? { aspectRatio: imageAspectRatioCss, minHeight: "360px" } : undefined;
   
@@ -252,9 +262,23 @@ export default function Home() {
     }).format(new Date());
 
   const selectImageAspectRatio = (ratio: AspectRatioOption) => {
+    if (gptImageResolution === "4K" && ratio !== "3:2" && ratio !== "2:3") return;
     setImageAspectRatio(ratio);
     const scope = getSettingScope();
     saveSetting(scope, "image_aspect_ratio", ratio);
+  };
+
+  const selectGptImageResolution = (resolution: GptResolutionOption) => {
+    setGptImageResolution(resolution);
+    if (resolution === "4K" && imageAspectRatio !== "3:2" && imageAspectRatio !== "2:3") {
+      setImageAspectRatio("3:2");
+      const scope = getSettingScope();
+      saveSetting(scope, "image_aspect_ratio", "3:2");
+      saveSetting(scope, "gpt_image_resolution", resolution);
+      return;
+    }
+    const scope = getSettingScope();
+    saveSetting(scope, "gpt_image_resolution", resolution);
   };
 
   useEffect(() => {
@@ -290,6 +314,7 @@ export default function Home() {
     const savedImageEndpoint = readSetting(scope, "image_gen_api_endpoint");
     const savedImageModel = readSetting(scope, "image_gen_model_name");
     const savedAspectRatio = readSetting(scope, "image_aspect_ratio");
+    const savedGptResolution = readSetting(scope, "gpt_image_resolution");
 
     if (savedImageKey) setImageApiKey(savedImageKey);
     if (savedImageEndpoint) setImageApiEndpoint(savedImageEndpoint);
@@ -307,6 +332,9 @@ export default function Home() {
     }
     if (aspectRatioOptions.includes(savedAspectRatio as any)) {
       setImageAspectRatio(savedAspectRatio as any);
+    }
+    if (gptResolutionOptions.some((option) => option.id === savedGptResolution)) {
+      setGptImageResolution(savedGptResolution as GptResolutionOption);
     }
 
     // 优先从本地缓存恢复用户状态（避免闪烁）
@@ -914,7 +942,7 @@ Example Output:
     const imageSeed = options?.imageSeed || "";
     const normalizedPrompt = prompt.trim().replace(/\s+/g, " ").slice(0, 300);
     const windowBucket = Math.floor(Date.now() / IDEMPOTENCY_BUCKET_MS);
-    return `img:${hashText(`${kind}|${phase}|${normalizedPrompt}|${imageSeed}|${imageAspectRatio}|${windowBucket}`)}`;
+    return `img:${hashText(`${kind}|${phase}|${normalizedPrompt}|${imageSeed}|${imageAspectRatio}|${gptImageResolution}|${windowBucket}`)}`;
   };
 
   const handleGenerateImage = async (prompt: string) => {
@@ -962,6 +990,7 @@ Example Output:
           prompt,
           modelName: effectiveModel,
           aspectRatio: imageAspectRatio,
+          resolution: isGptImage2Mode ? gptImageResolution : undefined,
           ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
           ...apiConfig
         }),
@@ -1162,6 +1191,7 @@ Example Output:
           image_url: uploadedImage,
           modelName: GPT_IMAGE_2_MODEL,
           aspectRatio: imageAspectRatio,
+          resolution: gptImageResolution,
           ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {})
         }),
         signal: controller.signal
@@ -1219,12 +1249,13 @@ Example Output:
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
     const useCustomPromptConfig = Boolean(apiKey || apiEndpoint || modelName);
+    const useGptPromptConfig = isGptImage2Mode && !isVideoMode && !isTxt2VideoMode;
 
     const FALLBACK_MODEL = isVideoMode ? "grok-4.20-0309-non-reasoning" : (isDeepThinking ? "grok-4.20-0309-reasoning" : "grok-4.20-0309-non-reasoning");
     
-    const finalEndpoint = isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : (apiEndpoint || undefined);
-    const finalApiKey = isAgnesMode ? AGNES_API_KEY : (apiKey || undefined);
-    const finalModel = isAgnesMode ? AGNES_TEXT_MODEL : (modelName || FALLBACK_MODEL);
+    const finalEndpoint = isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : (useGptPromptConfig ? GPT_PROMPT_API_ENDPOINT : (apiEndpoint || undefined));
+    const finalApiKey = isAgnesMode ? AGNES_API_KEY : (useGptPromptConfig ? GPT_PROMPT_API_KEY : (apiKey || undefined));
+    const finalModel = isAgnesMode ? AGNES_TEXT_MODEL : (useGptPromptConfig ? GPT_PROMPT_MODEL : (modelName || FALLBACK_MODEL));
 
     try {
       const isUncensored = isUncensoredMode && !isSafeMode;
@@ -1282,8 +1313,8 @@ Example Output:
             model: finalModel,
             temperature: isDeepThinking ? undefined : 0.8,
             stream: false,
-            apiEndpoint: isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : (useCustomPromptConfig ? finalEndpoint : undefined),
-            apiKey: isAgnesMode ? AGNES_API_KEY : (useCustomPromptConfig ? finalApiKey : undefined),
+            apiEndpoint: isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : ((useCustomPromptConfig || useGptPromptConfig) ? finalEndpoint : undefined),
+            apiKey: isAgnesMode ? AGNES_API_KEY : ((useCustomPromptConfig || useGptPromptConfig) ? finalApiKey : undefined),
             messages
           }),
           signal: controller.signal
@@ -2038,8 +2069,8 @@ Example Output:
                           key={ratio}
                           type="button"
                           onClick={() => selectImageAspectRatio(ratio)}
-                          disabled={imageLoading}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-widest transition-colors border ${imageAspectRatio === ratio ? "bg-amber-300/15 text-amber-200 border-amber-300/30" : "bg-theme-bg-card text-theme-text-primary border-theme-border-strong hover:bg-theme-bg-card-hover"} ${imageLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+                          disabled={imageLoading || (isGptImage2Mode && gptImageResolution === "4K" && ratio !== "3:2" && ratio !== "2:3")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-widest transition-colors border ${imageAspectRatio === ratio ? "bg-amber-300/15 text-amber-200 border-amber-300/30" : "bg-theme-bg-card text-theme-text-primary border-theme-border-strong hover:bg-theme-bg-card-hover"} ${(imageLoading || (isGptImage2Mode && gptImageResolution === "4K" && ratio !== "3:2" && ratio !== "2:3")) ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
                           {ratio === "auto" ? "AUTO" : ratio}
                         </button>
@@ -2048,6 +2079,29 @@ Example Output:
                   </div>
                   {isGptImage2Mode && (
                     <div className="mb-3">
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest mb-2">
+                          <span>生成清晰度</span>
+                          <span className="text-theme-text-placeholder">{gptImageResolution}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {gptResolutionOptions.map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => selectGptImageResolution(option.id)}
+                              disabled={imageLoading}
+                              className={`rounded-xl border px-3 py-2 text-xs font-black tracking-widest transition-all ${gptImageResolution === option.id ? "bg-amber-400/20 border-amber-300/50 text-amber-200 shadow-[0_0_18px_rgba(251,191,36,0.18)]" : "bg-theme-bg-card text-theme-text-secondary border-theme-border-strong hover:bg-theme-bg-card-hover hover:text-amber-200"} ${imageLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+                            >
+                              <span className="block">{option.label}</span>
+                              <span className="block text-[9px] font-mono opacity-60 mt-0.5">{option.note}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {gptImageResolution === "4K" && (
+                          <p className="text-[10px] text-amber-300/80 mt-1.5 leading-relaxed">4K 受接口像素预算限制，自动使用 3:2 或 2:3 规格，实测 3840x2160 可用；正方形 4096x4096 不支持。</p>
+                        )}
+                      </div>
                       <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted uppercase tracking-widest mb-2">
                         <span>参考图（可选，最多2张）</span>
                         <span className="text-theme-text-placeholder">{referenceImages.length}/2</span>

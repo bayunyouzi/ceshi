@@ -1,7 +1,7 @@
 // 完整模拟后端 API 处理流程
 
-const GPT_IMAGE_2_API_KEY = "f5f8dc3f65454077b2fd6560";
-const GPT_IMAGE_2_API_ENDPOINT = "https://gpt2.zeabur.app/v1";
+const GPT_IMAGE_2_API_KEY = "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
+const GPT_IMAGE_2_API_ENDPOINT = "https://yzgpt.zeabur.app/v1/images/generations";
 const GPT_IMAGE_2_MODEL = "gpt-image-2";
 
 const normalizeEndpoint = (raw, fallback, routeKind, isImg2Img) => {
@@ -183,8 +183,8 @@ async function testGPTImage2Flow() {
     console.log();
 
     // 修复 http 为 https
-    if (imageUrl && imageUrl.startsWith('http://gpt2.zeabur.app/')) {
-      imageUrl = imageUrl.replace('http://gpt2.zeabur.app/', 'https://gpt2.zeabur.app/');
+    if (imageUrl && imageUrl.startsWith('http://yzgpt.zeabur.app/')) {
+      imageUrl = imageUrl.replace('http://yzgpt.zeabur.app/', 'https://yzgpt.zeabur.app/');
       console.log('  ✅ 已修复 http 为 https');
       console.log(`  修复后 URL: ${imageUrl}`);
     }
