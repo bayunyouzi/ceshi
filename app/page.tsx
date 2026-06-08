@@ -1029,7 +1029,9 @@ Example Output:
       ) {
         displayMsg = "提示词触发安全审查，请尝试修改内容或开启安全模式";
       } else if (errMsg.includes("Failed to fetch")) {
-        displayMsg = "无法直连该自定义生图接口，可能是网络问题、服务未开启跨域访问(CORS)，或接口不可达。请确认地址正确且服务端支持浏览器跨域请求。";
+        displayMsg = isGptImage2Mode
+          ? "无法连接本站 GPT 生图后端，请确认 Zeabur 服务已重新部署并正常运行。"
+          : "无法直连该自定义生图接口，可能是网络问题、服务未开启跨域访问(CORS)，或接口不可达。请确认地址正确且服务端支持浏览器跨域请求。";
       } else if (errMsg.includes("500") || errMsg.includes("服务暂时不可用")) {
         displayMsg = "图片生成服务暂时不可用，请稍后重试";
       } else if (errMsg.includes("429") || errMsg.includes("请求过于频繁")) {
@@ -1219,7 +1221,9 @@ Example Output:
       if (err.name === "AbortError") {
         setError("请求超时，GPT-Image-2 模型响应较慢，请耐心等待或稍后重试");
       } else if (msg.includes("Failed to fetch")) {
-        setError("无法直连该自定义生图接口，可能是网络问题、服务未开启跨域访问(CORS)，或接口不可达。请确认地址正确且服务端支持浏览器跨域请求。");
+        setError(isGptImage2Mode
+          ? "无法连接本站 GPT 生图后端，请确认 Zeabur 服务已重新部署并正常运行。"
+          : "无法直连该自定义生图接口，可能是网络问题、服务未开启跨域访问(CORS)，或接口不可达。请确认地址正确且服务端支持浏览器跨域请求。");
       } else if (msg.includes("500") || msg.includes("服务暂时不可用")) {
         setError("图片生成服务暂时不可用，请稍后重试");
       } else if (msg.includes("429") || msg.includes("请求过于频繁")) {
@@ -1279,7 +1283,7 @@ Example Output:
 
       let data: any;
 
-      if (useCustomPromptConfig && finalApiKey && finalEndpoint) {
+      if (useCustomPromptConfig && !useGptPromptConfig && finalApiKey && finalEndpoint) {
         const endpoint = finalEndpoint.trim().replace(/^[`'"\s]+/, '').replace(/[`'"\s]+$/, '');
         const response = await fetch(endpoint, {
           method: "POST",
