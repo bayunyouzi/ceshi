@@ -48,8 +48,21 @@ const FREE_IMG_DAILY_LIMIT = 100;
 const COOLDOWN_SECONDS = 10;
 const IDEMPOTENCY_TTL_MS = 12000;
 type CachedJsonPayload = { body: any; status: number; expiresAt: number };
+type GptImageTask = {
+  id: string;
+  key: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  createdAt: number;
+  updatedAt: number;
+  imageUrl?: string;
+  result?: any;
+  error?: string;
+};
 const idempotencyCache = new Map<string, CachedJsonPayload>();
 const idempotencyInFlight = new Map<string, Promise<CachedJsonPayload>>();
+const GPT_IMAGE_TASK_TTL_MS = 60 * 60 * 1000;
+const gptImageTasks = new Map<string, GptImageTask>();
+const gptImageTaskByKey = new Map<string, string>();
 const normalizeIdempotencyKey = (raw: string | null) => {
   if (!raw) return "";
   const normalized = raw.trim();
@@ -62,6 +75,14 @@ const cleanupExpiredIdempotency = () => {
   for (const [key, payload] of Array.from(idempotencyCache.entries())) {
     if (payload.expiresAt <= now) {
       idempotencyCache.delete(key);
+    }
+  }
+  for (const [taskId, task] of Array.from(gptImageTasks.entries())) {
+    if (now - task.updatedAt > GPT_IMAGE_TASK_TTL_MS) {
+      gptImageTasks.delete(taskId);
+      if (gptImageTaskByKey.get(task.key) === taskId) {
+        gptImageTaskByKey.delete(task.key);
+      }
     }
   }
 };
@@ -265,6 +286,32 @@ const buildImageClientPayload = (
   modelChanged: Boolean(actualModel && requestedModel && actualModel !== requestedModel)
 });
 
+const buildGptTaskKey = (input: {
+  prompt: string;
+  imageUrl?: string | null;
+  referenceImages?: unknown;
+  aspectRatio?: unknown;
+  resolution?: unknown;
+  modelName?: unknown;
+}) => JSON.stringify({
+  prompt: String(input.prompt || "").trim().replace(/\s+/g, " ").slice(0, 1200),
+  imageUrl: input.imageUrl ? `${String(input.imageUrl).slice(0, 160)}:${String(input.imageUrl).length}` : "",
+  referenceImages: Array.isArray(input.referenceImages)
+    ? input.referenceImages.map((item) => `${String(item).slice(0, 160)}:${String(item).length}`).slice(0, 2)
+    : [],
+  aspectRatio: typeof input.aspectRatio === "string" ? input.aspectRatio : "",
+  resolution: typeof input.resolution === "string" ? input.resolution.toUpperCase() : "1K",
+  modelName: typeof input.modelName === "string" ? input.modelName : DEFAULT_GPT_IMAGE2_MODEL_NAME
+});
+
+const buildTaskClientPayload = (task: GptImageTask) => ({
+  taskId: task.id,
+  status: task.status,
+  imageUrl: task.imageUrl,
+  error: task.error,
+  ...(task.result || {})
+});
+
 const extractImageUrlFromAny = (value: any, depth: number = 0): string | null => {
   if (!value || depth > 6) return null;
   if (typeof value === "string") {
@@ -379,6 +426,172 @@ const getImageSize = (aspectKey: string, resolution: unknown, isGpt2Model: boole
   };
 };
 
+type GptImageTaskInput = {
+  prompt: string;
+  image_url?: string | null;
+  reference_images?: unknown;
+  modelName?: unknown;
+  aspectRatio?: unknown;
+  resolution?: unknown;
+};
+
+const normalizeImageReferenceForGpt = async (value: unknown, timeoutMs: number = 30000) => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const imageRef = value.trim();
+  if (imageRef.startsWith("data:image/")) return imageRef;
+  if (!/^https?:\/\//i.test(imageRef)) return null;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(imageRef, { signal: controller.signal });
+    if (!response.ok) return null;
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > 10 * 1024 * 1024) return null;
+    const mimeType = response.headers.get("content-type") || "image/jpeg";
+    return `data:${mimeType};base64,${buffer.toString("base64")}`;
+  } catch (_e) {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: { id: string; email: string | null } | null) => {
+  const task = gptImageTasks.get(taskId);
+  if (!task) return;
+
+  task.status = "running";
+  task.updatedAt = Date.now();
+
+  const model = typeof input.modelName === "string" && isGptImage2Model(input.modelName)
+    ? input.modelName
+    : DEFAULT_GPT_IMAGE2_MODEL_NAME;
+  const aspectKey = typeof input.aspectRatio === "string" ? input.aspectRatio.trim() : "";
+  const requestedResolution = typeof input.resolution === "string" ? input.resolution.trim().toUpperCase() : "1K";
+  const aspectSize = getImageSize(aspectKey, requestedResolution, true);
+  const finalPrompt = aspectSize
+    ? `${input.prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
+    : input.prompt;
+
+  try {
+    const normalizedMainImage = await normalizeImageReferenceForGpt(input.image_url);
+    const referenceImages = Array.isArray(input.reference_images) ? input.reference_images.slice(0, 2) : [];
+    const normalizedRefs = (await Promise.all(referenceImages.map((ref) => normalizeImageReferenceForGpt(ref, 15000))))
+      .filter((ref): ref is string => Boolean(ref));
+    const referenceImage = normalizedMainImage || normalizedRefs[0] || null;
+
+    const payload: any = {
+      model,
+      prompt: finalPrompt,
+      n: 1,
+      response_format: "url",
+      size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
+      width: aspectSize?.width ?? 1024,
+      height: aspectSize?.height ?? 1024,
+      image_size: {
+        width: aspectSize?.width ?? 1024,
+        height: aspectSize?.height ?? 1024
+      }
+    };
+
+    if (aspectKey) payload.aspect_ratio = aspectKey;
+    if (referenceImage) {
+      payload.image = referenceImage;
+      payload.image_url = referenceImage;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), requestedResolution === "4K" ? 9 * 60 * 1000 : 7 * 60 * 1000);
+    const response = await fetch(DEFAULT_GPT_IMAGE2_API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${DEFAULT_GPT_IMAGE2_API_KEY}`,
+        "User-Agent": REQUEST_USER_AGENT
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    const responseText = await response.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(responseText);
+    } catch (_e) {}
+
+    if (!response.ok) {
+      const parsedError = parseApiError(response.status, responseText);
+      task.status = "failed";
+      task.error = parsedError.message;
+      task.updatedAt = Date.now();
+      await prisma.generationLog.create({
+        data: {
+          type: "IMAGE",
+          userId: user?.id ?? null,
+          userEmail: user?.email ?? null,
+          model,
+          endpoint: DEFAULT_GPT_IMAGE2_API_ENDPOINT,
+          requestPrompt: String(finalPrompt).slice(0, 2000),
+          success: false,
+          errorMessage: parsedError.message,
+          responseText: responseText.slice(0, 2000)
+        }
+      }).catch((err: unknown) => console.error("[generate-image] async task log failed:", err));
+      return;
+    }
+
+    const imageUrl = extractImageUrlFromAny(data);
+    if (!imageUrl) {
+      task.status = "failed";
+      task.error = "生成完成但未返回可用图片";
+      task.updatedAt = Date.now();
+      return;
+    }
+
+    const result = buildImageClientPayload(data || {}, imageUrl, model, model);
+    task.status = "succeeded";
+    task.imageUrl = imageUrl;
+    task.result = result;
+    task.updatedAt = Date.now();
+
+    await prisma.generationLog.create({
+      data: {
+        type: "IMAGE",
+        userId: user?.id ?? null,
+        userEmail: user?.email ?? null,
+        model,
+        endpoint: DEFAULT_GPT_IMAGE2_API_ENDPOINT,
+        requestPrompt: String(finalPrompt).slice(0, 2000),
+        imageUrl: String(imageUrl).slice(0, 2000),
+        responseText: JSON.stringify(data || {}).slice(0, 2000),
+        success: true
+      }
+    }).catch((err: unknown) => console.error("[generate-image] async task log failed:", err));
+  } catch (error) {
+    task.status = "failed";
+    task.error = error instanceof Error && error.name === "AbortError"
+      ? "GPT 高清图生成超时，请稍后重试或降低清晰度"
+      : (error instanceof Error ? error.message : String(error));
+    task.updatedAt = Date.now();
+  }
+};
+
+export async function GET(req: Request) {
+  cleanupExpiredIdempotency();
+  const { searchParams } = new URL(req.url);
+  const taskId = searchParams.get("taskId") || "";
+  if (!taskId) {
+    return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+  }
+  const task = gptImageTasks.get(taskId);
+  if (!task) {
+    return NextResponse.json({ error: "任务不存在或已过期" }, { status: 404 });
+  }
+  return NextResponse.json(buildTaskClientPayload(task), { status: 200 });
+}
+
 export async function POST(req: Request) {
   cleanupExpiredIdempotency();
   const idempotencyKey = normalizeIdempotencyKey(req.headers.get("Idempotency-Key") || req.headers.get("X-Idempotency-Key"));
@@ -423,7 +636,7 @@ export async function POST(req: Request) {
   };
 
   try {
-    const { prompt, image_url, reference_images, apiKey, apiEndpoint, modelName, mediaType, duration, aspectRatio, resolution } = await req.json();
+    const { prompt, image_url, reference_images, apiKey, apiEndpoint, modelName, mediaType, duration, aspectRatio, resolution, async: asyncRequested } = await req.json();
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     const decoded = token ? verifyToken(token) : null;
@@ -433,6 +646,38 @@ export async function POST(req: Request) {
 
     if (!prompt) {
       return respond({ error: "Prompt is required" }, 400);
+    }
+
+    const shouldCreateAsyncTask = asyncRequested === true;
+    if (shouldCreateAsyncTask) {
+      const taskKey = buildGptTaskKey({ prompt, imageUrl: image_url, referenceImages: reference_images, aspectRatio, resolution, modelName });
+      const existingTaskId = gptImageTaskByKey.get(taskKey);
+      const existingTask = existingTaskId ? gptImageTasks.get(existingTaskId) : null;
+      if (existingTask && existingTask.status !== "failed") {
+        return respond(buildTaskClientPayload(existingTask), 202);
+      }
+
+      const taskId = `gpt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const task: GptImageTask = {
+        id: taskId,
+        key: taskKey,
+        status: "queued",
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      gptImageTasks.set(taskId, task);
+      gptImageTaskByKey.set(taskKey, taskId);
+
+      void runGptImageTask(taskId, {
+        prompt,
+        image_url,
+        reference_images,
+        modelName,
+        aspectRatio,
+        resolution
+      }, user);
+
+      return respond(buildTaskClientPayload(task), 202);
     }
 
     const isVideo = mediaType === "video";

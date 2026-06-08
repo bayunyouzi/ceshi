@@ -60,6 +60,7 @@ export default function Home() {
   
   // 图片生成相关状态
   const [imageLoading, setImageLoading] = useState(false);
+  const [gptImageTaskStatus, setGptImageTaskStatus] = useState("");
   const [generatedImage, setGeneratedImage] = useState("");
   const [imageMeta, setImageMeta] = useState<{
     displayModel?: string;
@@ -945,6 +946,35 @@ Example Output:
     return `img:${hashText(`${kind}|${phase}|${normalizedPrompt}|${imageSeed}|${imageAspectRatio}|${gptImageResolution}|${windowBucket}`)}`;
   };
 
+  const pollGptImageTask = async (taskId: string, controller: AbortController) => {
+    const statusText: Record<string, string> = {
+      queued: "GPT 高清任务已排队...",
+      running: "GPT 高清图生成中，2K/4K 会比较慢...",
+      succeeded: "GPT 高清图生成完成",
+      failed: "GPT 高清图生成失败"
+    };
+
+    for (let i = 0; i < 90; i++) {
+      await new Promise(resolve => setTimeout(resolve, i < 3 ? 1500 : 3000));
+      const response = await fetch(`/api/generate-image?taskId=${encodeURIComponent(taskId)}`, {
+        method: "GET",
+        signal: controller.signal
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data) {
+        throw new Error(data?.error || `任务查询失败 (${response.status})`);
+      }
+      setGptImageTaskStatus(statusText[data.status] || "GPT 高清任务处理中...");
+      if (data.status === "succeeded" && data.imageUrl) {
+        return data;
+      }
+      if (data.status === "failed") {
+        throw new Error(data.error || "GPT 高清图生成失败，请稍后重试");
+      }
+    }
+    throw new Error("GPT 高清图生成仍在进行中，请稍后重试或降低到 1K");
+  };
+
   const handleGenerateImage = async (prompt: string) => {
     if (imageRequestLockRef.current || imageLoading) return;
 
@@ -967,12 +997,14 @@ Example Output:
     imageRequestLockRef.current = true;
 
     setImageLoading(true);
+    setGptImageTaskStatus("");
     setError("");
     setGeneratedImage("");
     setImageMeta(null);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), isGptImage2Mode ? 320000 : 120000);
+    const useAsyncGptImageTask = isGptImage2Mode && (gptImageResolution === "2K" || gptImageResolution === "4K");
+    const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? 420000 : (isGptImage2Mode ? 320000 : 120000));
     
     try {
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
@@ -991,6 +1023,7 @@ Example Output:
           modelName: effectiveModel,
           aspectRatio: imageAspectRatio,
           resolution: isGptImage2Mode ? gptImageResolution : undefined,
+          async: useAsyncGptImageTask,
           ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {}),
           ...apiConfig
         }),
@@ -1003,10 +1036,15 @@ Example Output:
         throw new Error(errData.error || `请求失败 (${response.status})`);
       }
 
-      const data = await response.json();
+      let data = await response.json();
+      if (data.taskId && data.status && data.status !== "succeeded") {
+        setGptImageTaskStatus(data.status === "queued" ? "GPT 高清任务已排队..." : "GPT 高清图生成中，2K/4K 会比较慢...");
+        data = await pollGptImageTask(data.taskId, controller);
+      }
       if (data.imageUrl) {
         setGeneratedImage(data.imageUrl);
         setImageMeta(data);
+        setGptImageTaskStatus("");
         if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
         return;
       }
@@ -1049,6 +1087,7 @@ Example Output:
       setError(displayMsg);
     } finally {
       setImageLoading(false);
+      setGptImageTaskStatus("");
       imageRequestLockRef.current = false;
     }
   };
@@ -1158,12 +1197,14 @@ Example Output:
     imageRequestLockRef.current = true;
 
     setImageLoading(true);
+    setGptImageTaskStatus("");
     setError("");
     setGeneratedImage("");
     setImageMeta(null);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 320000);
+    const useAsyncGptImageTask = gptImageResolution === "2K" || gptImageResolution === "4K";
+    const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? 420000 : 320000);
 
     try {
       let promptInstruction = img2ImgPrompts[img2ImgEffect] || img2ImgPrompts.random;
@@ -1194,6 +1235,7 @@ Example Output:
           modelName: GPT_IMAGE_2_MODEL,
           aspectRatio: imageAspectRatio,
           resolution: gptImageResolution,
+          async: useAsyncGptImageTask,
           ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {})
         }),
         signal: controller.signal
@@ -1205,10 +1247,15 @@ Example Output:
         throw new Error(errData.error || `请求失败 (${response.status})`);
       }
 
-      const data = await response.json();
+      let data = await response.json();
+      if (data.taskId && data.status && data.status !== "succeeded") {
+        setGptImageTaskStatus(data.status === "queued" ? "GPT 高清图生图任务已排队..." : "GPT 高清图生图生成中，2K/4K 会比较慢...");
+        data = await pollGptImageTask(data.taskId, controller);
+      }
       if (data.imageUrl) {
         setGeneratedImage(data.imageUrl);
         setImageMeta(data);
+        setGptImageTaskStatus("");
         deductLimit('image');
         return;
       }
@@ -1236,6 +1283,7 @@ Example Output:
       }
     } finally {
       setImageLoading(false);
+      setGptImageTaskStatus("");
       imageRequestLockRef.current = false;
     }
   };
@@ -1963,8 +2011,11 @@ Example Output:
                     className={`w-full py-4 rounded-2xl text-sm md:text-base font-black tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${imageLoading ? "bg-theme-bg-card text-theme-text-muted cursor-wait" : "bg-rose-500 text-white hover:bg-rose-400 hover:scale-[0.98] shadow-[0_0_30px_rgba(244,63,94,0.3)]"}`}
                   >
                     {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                    {imageLoading ? "图像处理中..." : "开始图生图"}
+                    {imageLoading ? (gptImageTaskStatus || "图像处理中...") : "开始图生图"}
                   </button>
+                  {gptImageTaskStatus && (
+                    <p className="mt-2 text-[10px] text-amber-300/80 font-mono leading-relaxed text-center">{gptImageTaskStatus}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -2139,8 +2190,11 @@ Example Output:
                     className={`w-full py-4 rounded-2xl font-black text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${imageLoading ? "bg-indigo-500/20 text-indigo-400/50 cursor-wait border border-indigo-500/30" : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-[0_0_30px_rgba(99,102,241,0.3)] hover:shadow-[0_0_40px_rgba(99,102,241,0.5)] hover:scale-[0.98]"}`}
                   >
                     {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
-                    {imageLoading ? "图片生成中..." : "一键生成画面"}
+                    {imageLoading ? (gptImageTaskStatus || "图片生成中...") : "一键生成画面"}
                   </button>
+                  {gptImageTaskStatus && (
+                    <p className="mt-2 text-[10px] text-amber-300/80 font-mono leading-relaxed text-center">{gptImageTaskStatus}</p>
+                  )}
                 </div>
               )}
 
