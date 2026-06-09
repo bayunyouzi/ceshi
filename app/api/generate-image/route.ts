@@ -41,6 +41,7 @@ const DEFAULT_TXT2VIDEO_API_KEY = process.env.XAI_VIDEO_API_KEY || "xai-I1k5xdu1
 const DEFAULT_TXT2VIDEO_API_ENDPOINT = process.env.XAI_VIDEO_API_ENDPOINT || "https://api.x.ai/v1/videos/generations";
 const DEFAULT_TXT2VIDEO_MODEL_NAME = process.env.XAI_VIDEO_MODEL || "grok-imagine-video";
 const REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+const FIXED_NEGATIVE_PROMPT = "sharp edges, high contrast, messy background, small scattered color patches, complex texture overlays, excessive detail, grainy rendering, over-sharpening";
 const VIDEO_POLL_INTERVAL_MS = 5000;
 const VIDEO_MAX_WAIT_MS = 8 * 60 * 1000;
 
@@ -131,6 +132,18 @@ const isAgnesModel = (model: string | undefined) => {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const appendFixedNegativePromptToImagePrompt = (prompt: string) => {
+  const normalizedPrompt = String(prompt || "").trim();
+  if (!normalizedPrompt) return FIXED_NEGATIVE_PROMPT;
+  const lowerPrompt = normalizedPrompt.toLowerCase();
+  const fixedItems = FIXED_NEGATIVE_PROMPT.split(",").map(item => item.trim()).filter(Boolean);
+  const missingItems = fixedItems.filter(item => !lowerPrompt.includes(item.toLowerCase()));
+  if (missingItems.length === 0) return normalizedPrompt;
+  const prefix = /negative\s*prompt\s*:/i.test(normalizedPrompt) ? ", " : "\n\nNegative prompt: ";
+  const suffix = prefix === ", " ? "" : ".";
+  return `${normalizedPrompt}${prefix}${missingItems.join(", ")}${suffix}`;
+};
 
 const buildVideoStatusEndpoint = (startEndpoint: string, requestId: string) => {
   const encodedRequestId = encodeURIComponent(requestId);
@@ -470,6 +483,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
   const aspectKey = typeof input.aspectRatio === "string" ? input.aspectRatio.trim() : "";
   const requestedResolution = typeof input.resolution === "string" ? input.resolution.trim().toUpperCase() : "1K";
   const aspectSize = getImageSize(aspectKey, requestedResolution, true);
+  const startedAt = Date.now();
 
   try {
     const normalizedMainImage = await normalizeImageReferenceForGpt(input.image_url);
@@ -482,9 +496,10 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
     // 图生图必须走 /v1/images/edits 端点，将参考图以 input_image 格式传入 image 数组；
     // /v1/images/generations 端点不支持 image 参数，硬塞会被上游静默忽略。
     const hasReferenceImage = Boolean(referenceImage);
+    const imagePrompt = appendFixedNegativePromptToImagePrompt(input.prompt);
     const finalPrompt = aspectSize && !hasReferenceImage
-      ? `${input.prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
-      : input.prompt;
+      ? `${imagePrompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
+      : imagePrompt;
     const asyncEndpoint = hasReferenceImage
       ? DEFAULT_GPT_IMAGE2_API_ENDPOINT.replace(/\/images\/generations\/?$/i, '/images/edits')
       : DEFAULT_GPT_IMAGE2_API_ENDPOINT;
@@ -523,8 +538,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), requestedResolution === "4K" ? 9 * 60 * 1000 : 7 * 60 * 1000);
-    const startedAt = Date.now();
+    const timeoutId = setTimeout(() => controller.abort(), requestedResolution === "4K" ? 14 * 60 * 1000 : 10 * 60 * 1000);
     const response = await fetch(asyncEndpoint, {
       method: "POST",
       headers: {
@@ -792,9 +806,10 @@ export async function POST(req: Request) {
     const aspectKey = typeof aspectRatio === "string" ? aspectRatio.trim() : "";
     const requestedResolution = typeof resolution === "string" ? resolution.trim().toUpperCase() : "1K";
     const aspectSize = !isVideo ? getImageSize(aspectKey, requestedResolution, Boolean(isGpt2Model)) : null;
+    const imagePrompt = !isVideo ? appendFixedNegativePromptToImagePrompt(prompt) : prompt;
     const finalPrompt = aspectSize && !isImg2Img
-      ? `${prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
-      : prompt;
+      ? `${imagePrompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
+      : imagePrompt;
 
     // 检查限制逻辑
     // 只有当用户没有提供自定义 Key 时，才应用限制
@@ -849,12 +864,12 @@ export async function POST(req: Request) {
 
     // 构建请求，增加超时控制
     // 优化：根据不同场景设置不同超时时间
-    // GPT-Image-2 模型响应较慢，增加超时到 300 秒（5分钟）
+    // GPT-Image-2 模型响应较慢，增加超时到 10 分钟
     const isGpt2 = modelName && /gpt-image-2/i.test(modelName);
     const getTimeout = (isVideo: boolean, isImg2Img: boolean) => {
       if (isVideo) return VIDEO_MAX_WAIT_MS;
-      if (isGpt2 || isImg2Img) return 300000;
-      return 90000;
+      if (isGpt2 || isImg2Img) return 10 * 60 * 1000;
+      return 180000;
     };
     const controller = new AbortController();
     const timeoutMs = getTimeout(isVideo, isImg2Img);
@@ -1462,7 +1477,7 @@ export async function POST(req: Request) {
       let badGatewayRetryCount = 0;
       const maxBadGatewayRetry = 2;
       let serverErrorRetryCount = 0;
-      const maxServerErrorRetry = isGpt2Model ? 2 : 1;
+      const maxServerErrorRetry = isGpt2Model ? 4 : 2;
 
       const maxAttempts = 6;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {

@@ -18,6 +18,7 @@ export default function Home() {
   const GPT_PROMPT_API_KEY = process.env.NEXT_PUBLIC_GPT_PROMPT_API_KEY || GPT_IMAGE_2_API_KEY;
   const GPT_PROMPT_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_PROMPT_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/chat/completions";
   const GPT_PROMPT_MODEL = process.env.NEXT_PUBLIC_GPT_PROMPT_MODEL || "gpt-5.5";
+  const FIXED_NEGATIVE_PROMPT = "sharp edges, high contrast, messy background, small scattered color patches, complex texture overlays, excessive detail, grainy rendering, over-sharpening";
   const FRONTEND_IMG_API_KEY = process.env.NEXT_PUBLIC_IMG_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
   const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "http://bayunzi.shop/v1/chat/completions";
   const FRONTEND_IMG_MODEL_NAME = process.env.NEXT_PUBLIC_IMG_MODEL_NAME || "grok-imagine-image-lite";
@@ -61,6 +62,7 @@ export default function Home() {
   // 图片生成相关状态
   const [imageLoading, setImageLoading] = useState(false);
   const [gptImageTaskStatus, setGptImageTaskStatus] = useState("");
+  const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
   const [generatedImage, setGeneratedImage] = useState("");
   const [imageMeta, setImageMeta] = useState<{
     displayModel?: string;
@@ -80,6 +82,9 @@ export default function Home() {
   const lastImage429AtRef = useRef(0);
   const VIDEO_DURATION_SECONDS = 10;
   const IMAGE_DEBOUNCE_MS = 1200;
+  const GPT_IMAGE_SYNC_TIMEOUT_MS = 10 * 60 * 1000;
+  const GPT_IMAGE_ASYNC_TIMEOUT_MS = 15 * 60 * 1000;
+  const IMAGE_DEFAULT_TIMEOUT_MS = 180000;
   const IDEMPOTENCY_BUCKET_MS = 10000;
   // GPT-Image-2 官方支持的比例
   const aspectRatioOptions = ["1:1", "3:2", "2:3", "auto"] as const;
@@ -934,6 +939,21 @@ Example Output:
     return (hash >>> 0).toString(36);
   };
 
+  const formatImageElapsedTime = (seconds: number) => {
+    const safeSeconds = Math.max(0, seconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const restSeconds = safeSeconds % 60;
+    return minutes > 0 ? `${minutes}分${restSeconds.toString().padStart(2, "0")}秒` : `${restSeconds}秒`;
+  };
+
+  const appendFixedNegativePrompt = (negativePrompt: string) => {
+    const normalized = (negativePrompt || "").trim().replace(/,+$/g, "");
+    if (!normalized) return FIXED_NEGATIVE_PROMPT;
+    const lowerNormalized = normalized.toLowerCase();
+    const missingItems = FIXED_NEGATIVE_PROMPT.split(",").map(item => item.trim()).filter(item => item && !lowerNormalized.includes(item.toLowerCase()));
+    return missingItems.length > 0 ? `${normalized}, ${missingItems.join(", ")}` : normalized;
+  };
+
   const buildImageIdempotencyKey = (
     prompt: string,
     options?: { kind?: "txt2img" | "img2img"; imageSeed?: string; phase?: "primary" | "retry" }
@@ -978,6 +998,8 @@ Example Output:
   const handleGenerateImage = async (prompt: string) => {
     if (imageRequestLockRef.current || imageLoading) return;
 
+    let elapsedTimerId: ReturnType<typeof setInterval> | null = null;
+
     const cooldownLeft = 10000 - (Date.now() - lastImage429AtRef.current);
     if (cooldownLeft > 0) {
       setError(`请求过于频繁，请等待 ${Math.ceil(cooldownLeft / 1000)} 秒后重试`);
@@ -998,29 +1020,37 @@ Example Output:
 
     setImageLoading(true);
     setGptImageTaskStatus("");
+    setImageElapsedSeconds(0);
+    const generationStartedAt = Date.now();
+    elapsedTimerId = setInterval(() => {
+      setImageElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
+    }, 1000);
     setError("");
     setGeneratedImage("");
     setImageMeta(null);
     
     const controller = new AbortController();
     const useAsyncGptImageTask = isGptImage2Mode && (gptImageResolution === "2K" || gptImageResolution === "4K");
-    const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? 420000 : (isGptImage2Mode ? 320000 : 120000));
+    const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? GPT_IMAGE_ASYNC_TIMEOUT_MS : (isGptImage2Mode ? GPT_IMAGE_SYNC_TIMEOUT_MS : IMAGE_DEFAULT_TIMEOUT_MS));
     
     try {
       const useCustomApi = Boolean(imageApiKey && imageApiEndpoint && !isGptImage2Mode);
       const effectiveModel = isAgnesMode ? AGNES_IMAGE_MODEL : (useCustomApi ? (imageModelName || "grok-imagine-image-lite") : (isGptImage2Mode ? GPT_IMAGE_2_MODEL : FRONTEND_IMG_MODEL_NAME));
       const apiConfig = isAgnesMode ? { apiKey: AGNES_API_KEY, apiEndpoint: `${AGNES_BASE_URL}/images/generations` } : (useCustomApi ? { apiKey: imageApiKey, apiEndpoint: cleanCustomEndpoint(imageApiEndpoint) } : {});
+      const imagePrompt = result.negative_prompt
+        ? `${prompt}\n\nNegative prompt: ${result.negative_prompt}`
+        : prompt;
 
       const token = localStorage.getItem("auth_token");
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": buildImageIdempotencyKey(prompt, { kind: "txt2img" }),
+          "Idempotency-Key": buildImageIdempotencyKey(imagePrompt, { kind: "txt2img" }),
           ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          prompt,
+          prompt: imagePrompt,
           modelName: effectiveModel,
           aspectRatio: imageAspectRatio,
           resolution: isGptImage2Mode ? gptImageResolution : undefined,
@@ -1045,6 +1075,9 @@ Example Output:
       if (data.imageUrl) {
         setGeneratedImage(data.imageUrl);
         setImageMeta(data);
+        if (typeof data.elapsedMs === "number") {
+          setImageElapsedSeconds(Math.max(1, Math.round(data.elapsedMs / 1000)));
+        }
         setGptImageTaskStatus("");
         if (!(imageApiKey && imageApiEndpoint)) deductLimit('image');
         return;
@@ -1087,6 +1120,8 @@ Example Output:
 
       setError(displayMsg);
     } finally {
+      if (elapsedTimerId) clearInterval(elapsedTimerId);
+      setImageElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
       setImageLoading(false);
       setGptImageTaskStatus("");
       imageRequestLockRef.current = false;
@@ -1197,15 +1232,21 @@ Example Output:
     if (!checkLimit('image')) return;
     imageRequestLockRef.current = true;
 
+    let elapsedTimerId: ReturnType<typeof setInterval> | null = null;
     setImageLoading(true);
     setGptImageTaskStatus("");
+    setImageElapsedSeconds(0);
+    const generationStartedAt = Date.now();
+    elapsedTimerId = setInterval(() => {
+      setImageElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
+    }, 1000);
     setError("");
     setGeneratedImage("");
     setImageMeta(null);
 
     const controller = new AbortController();
     const useAsyncGptImageTask = true; // 图生图统一走后端任务队列，避免长请求被浏览器/网关中断
-    const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? 420000 : 320000);
+    const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? GPT_IMAGE_ASYNC_TIMEOUT_MS : GPT_IMAGE_SYNC_TIMEOUT_MS);
 
     try {
       let promptInstruction = img2ImgPrompts[img2ImgEffect] || img2ImgPrompts.random;
@@ -1257,6 +1298,9 @@ Example Output:
       if (data.imageUrl) {
         setGeneratedImage(data.imageUrl);
         setImageMeta(data);
+        if (typeof data.elapsedMs === "number") {
+          setImageElapsedSeconds(Math.max(1, Math.round(data.elapsedMs / 1000)));
+        }
         setGptImageTaskStatus("");
         deductLimit('image');
         return;
@@ -1284,6 +1328,8 @@ Example Output:
         setError(msg);
       }
     } finally {
+      if (elapsedTimerId) clearInterval(elapsedTimerId);
+      setImageElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
       setImageLoading(false);
       setGptImageTaskStatus("");
       imageRequestLockRef.current = false;
@@ -1407,14 +1453,12 @@ Example Output:
         
         // 二次清洗：确保 prompt 中不包含 negative 关键词
         let cleanPrompt = promptData.prompt;
-        const negativeKeywords = ["negative_prompt", "lowres", "bad anatomy", "error", "worst quality", "low quality", "normal quality", "jpeg artifacts", "signature", "watermark", "username", "blurry"];
-        
         // 简单过滤掉明显的 negative 字段泄漏（如果 AI 把 key 也生成进去了）
         cleanPrompt = cleanPrompt.replace(/"?negative_prompt"?:?.*$/i, ""); 
         
         setResult({
           prompt: cleanPrompt,
-          negative_prompt: promptData.negative_prompt,
+          negative_prompt: appendFixedNegativePrompt(promptData.negative_prompt),
           recommended_settings: {
             steps: 28,
             cfg_scale: 7,
@@ -1474,7 +1518,7 @@ Example Output:
         if (promptMatch && negativeMatch) {
          setResult({
           prompt: promptMatch[1],
-          negative_prompt: negativeMatch[1],
+          negative_prompt: appendFixedNegativePrompt(negativeMatch[1]),
           recommended_settings: {
             steps: 28,
             cfg_scale: 7,
@@ -1491,7 +1535,7 @@ Example Output:
           // 如果正则也提取不到，再显示错误
           setResult({
             prompt: "生成格式有误，请重试...", 
-            negative_prompt: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry",
+            negative_prompt: appendFixedNegativePrompt("lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"),
             recommended_settings: { steps: 28, cfg_scale: 7 }
           });
           setError("AI 返回格式异常，请重试");
@@ -2013,7 +2057,7 @@ Example Output:
                     className={`w-full py-4 rounded-2xl text-sm md:text-base font-black tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${imageLoading ? "bg-theme-bg-card text-theme-text-muted cursor-wait" : "bg-rose-500 text-white hover:bg-rose-400 hover:scale-[0.98] shadow-[0_0_30px_rgba(244,63,94,0.3)]"}`}
                   >
                     {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                    {imageLoading ? (gptImageTaskStatus || "图像处理中...") : "开始图生图"}
+                    {imageLoading ? `${gptImageTaskStatus || "图像处理中..."} ${formatImageElapsedTime(imageElapsedSeconds)}` : (imageElapsedSeconds > 0 ? `开始图生图（上次 ${formatImageElapsedTime(imageElapsedSeconds)}）` : "开始图生图")}
                   </button>
                   {gptImageTaskStatus && (
                     <p className="mt-2 text-[10px] text-amber-300/80 font-mono leading-relaxed text-center">{gptImageTaskStatus}</p>
@@ -2192,7 +2236,7 @@ Example Output:
                     className={`w-full py-4 rounded-2xl font-black text-sm tracking-widest uppercase transition-all duration-300 flex justify-center items-center gap-3 relative overflow-hidden ${imageLoading ? "bg-indigo-500/20 text-indigo-400/50 cursor-wait border border-indigo-500/30" : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-[0_0_30px_rgba(99,102,241,0.3)] hover:shadow-[0_0_40px_rgba(99,102,241,0.5)] hover:scale-[0.98]"}`}
                   >
                     {imageLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
-                    {imageLoading ? (gptImageTaskStatus || "图片生成中...") : "一键生成画面"}
+                    {imageLoading ? `${gptImageTaskStatus || "图片生成中..."} ${formatImageElapsedTime(imageElapsedSeconds)}` : (imageElapsedSeconds > 0 ? `一键生成画面（上次 ${formatImageElapsedTime(imageElapsedSeconds)}）` : "一键生成画面")}
                   </button>
                   {gptImageTaskStatus && (
                     <p className="mt-2 text-[10px] text-amber-300/80 font-mono leading-relaxed text-center">{gptImageTaskStatus}</p>
