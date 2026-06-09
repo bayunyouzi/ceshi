@@ -482,35 +482,27 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
     const referenceImage = normalizedMainImage || normalizedRefs[0] || null;
 
     // 构建请求：图生图 vs 文生图使用不同的 endpoint 和 payload 格式
-    // 图生图必须走 chat/completions + image_config，把图片嵌入 messages 数组；
-    // /v1/images/generations 端点不支持 image/image_url 参数（标准 OpenAI API 不含这些字段），
-    // 如果硬塞会被上游静默忽略，导致生成结果与参考图毫无关系。
+    // 图生图必须走 /v1/images/edits 端点，将参考图以 input_image 格式传入 image 数组；
+    // /v1/images/generations 端点不支持 image 参数，硬塞会被上游静默忽略。
     const hasReferenceImage = Boolean(referenceImage);
     const asyncEndpoint = hasReferenceImage
-      ? DEFAULT_GPT_IMAGE2_API_ENDPOINT.replace(/\/images\/generations\/?$/i, '/chat/completions')
+      ? DEFAULT_GPT_IMAGE2_API_ENDPOINT.replace(/\/images\/generations\/?$/i, '/images/edits')
       : DEFAULT_GPT_IMAGE2_API_ENDPOINT;
 
     let payload: any;
     if (hasReferenceImage) {
-      // 图生图：chat/completions + image_config 格式
-      const extraRefs = normalizedRefs.filter(ref => ref !== referenceImage).slice(0, 1);
+      // 图生图：/v1/images/edits 端点格式
+      // image 参数接收包含 {type: "input_image", image_url: "data:..."} 的数组
+      const allImages = [referenceImage, ...normalizedRefs.filter(ref => ref !== referenceImage).slice(0, 1)];
       payload = {
         model,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: finalPrompt },
-            { type: "image_url", image_url: { url: referenceImage } },
-            ...extraRefs.map(ref => ({ type: "image_url", image_url: { url: ref } }))
-          ]
-        }],
-        stream: false,
-        max_tokens: 4096,
-        image_config: {
-          n: 1,
-          size: "1024x1024",
-          response_format: "b64_json"
-        }
+        image: allImages.map(img => ({
+          type: "input_image",
+          image_url: img
+        })),
+        prompt: finalPrompt,
+        n: 1,
+        size: "1024x1024"
       };
     } else {
       // 文生图：/v1/images/generations 标准格式
@@ -728,12 +720,12 @@ export async function POST(req: Request) {
       ? (isGpt2Model ? finalModel : DEFAULT_GPT_IMAGE2_MODEL_NAME)
       : finalModel;
 
-    // GPT-Image-2 图生图：/v1/images/generations 端点不支持 image/image_url 参数（标准 OpenAI API 不含这些字段），
-    // 必须改用 chat/completions 格式，将参考图嵌入 messages 数组 + image_config 才能生效。
+    // GPT-Image-2 图生图：/v1/images/generations 端点不支持 image 参数，
+    // 必须改用 /v1/images/edits 端点，将参考图以 input_image 格式传入 image 数组。
     // 否则图片数据会被上游 API 静默忽略，导致生成结果与原图毫无关系。
     const isGpt2Img2Img = isGpt2Model && isImg2Img;
     if (isGpt2Img2Img && isImagesGenerationEndpoint(finalEndpoint)) {
-      finalEndpoint = finalEndpoint.replace(/\/images\/generations\/?$/i, '/chat/completions');
+      finalEndpoint = finalEndpoint.replace(/\/images\/generations\/?$/i, '/images/edits');
     }
 
     if (isImg2Img && !isVideo && !isGpt2Model) {
@@ -746,11 +738,10 @@ export async function POST(req: Request) {
     }
     
     const hasReferenceImages = Array.isArray(reference_images) && reference_images.length > 0 && !isVideo;
-    // GPT-Image-2 文生图使用 /images/generations；图生图强制走 chat/completions（图片在 messages 中）
+    // GPT-Image-2 文生图使用 /images/generations；图生图走 /images/edits
     const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint) && (!hasReferenceImages || isGpt2Model) && !isGpt2Img2Img;
-    // 图生图使用 /images/edits 端点
-    // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
-    const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
+    // 图生图使用 /images/edits 端点（包括 GPT-Image-2 图生图）
+    const useImagesEditsApi = !isVideo && isImg2Img && isImagesEditsEndpoint(finalEndpoint) && (!isGpt2Model || isGpt2Img2Img);
 
     // 调试日志：GPT-Image-2 请求参数
     if (isGpt2Model) {
@@ -763,6 +754,7 @@ export async function POST(req: Request) {
         finalModel,
         actualModel,
         useImagesGenerationApi,
+        useImagesEditsApi,
         isImg2Img,
         isGpt2Img2Img,
         hasImageUrl: Boolean(image_url),
@@ -1319,14 +1311,30 @@ export async function POST(req: Request) {
 
       let requestPayload: any;
       if (useImagesEditsApi) {
-        // /images/edits 端点格式：multipart/form-data
-        // 暂时使用 chat/completions 格式，因为大多数 API 不直接支持 edits
-        requestPayload = {
-          model: actualModel,
-          messages: messages,
-          stream: false,
-          max_tokens: 4096
-        };
+        // /images/edits 端点格式
+        if (isGpt2Img2Img) {
+          // GPT-Image-2 图生图：/v1/images/edits + image 数组格式
+          // 参考 OpenAI 官方文档，image 参数接收包含 {type: "input_image", image_url: "data:..."} 的数组
+          const allRefImages = [finalImageUrl, ...validRefImages.filter(ref => ref !== finalImageUrl).slice(0, 1)];
+          requestPayload = {
+            model: actualModel,
+            image: allRefImages.map(img => ({
+              type: "input_image",
+              image_url: img
+            })),
+            prompt: finalPrompt,
+            n: 1,
+            size: "1024x1024"
+          };
+        } else {
+          // 非 GPT-Image-2 的 edits 端点：使用 messages 格式
+          requestPayload = {
+            model: actualModel,
+            messages: messages,
+            stream: false,
+            max_tokens: 4096
+          };
+        }
       } else if (useImagesGenerationApi) {
         requestPayload = isAgnes ? {
           model: actualModel,
@@ -1358,7 +1366,7 @@ export async function POST(req: Request) {
         if (!isVideo && (isGrokImagineModel(actualModel) || isGpt2Model)) {
           requestPayload.image_config = {
             n: 1,
-            size: isGpt2Img2Img ? "1024x1024" : `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
+            size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
             response_format: "b64_json"
           };
         }
@@ -1368,8 +1376,7 @@ export async function POST(req: Request) {
         requestPayload.duration = videoDuration;
       }
       // 图生图模式强制使用 1024x1024（API 限制）
-      // 注意：GPT-Image-2 图生图走 chat/completions + image_config 路径，size 已在 image_config 中设置，
-      // 无需再添加顶层 size 字段
+      // 注意：GPT-Image-2 图生图走 /v1/images/edits 路径，size 已在 payload 中设置
       if (isImg2Img && useImagesGenerationApi) {
         requestPayload.size = "1024x1024";
         requestPayload.width = 1024;
