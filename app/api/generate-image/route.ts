@@ -481,29 +481,58 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
       .filter((ref): ref is string => Boolean(ref));
     const referenceImage = normalizedMainImage || normalizedRefs[0] || null;
 
-    const payload: any = {
-      model,
-      prompt: finalPrompt,
-      n: 1,
-      response_format: "url",
-      size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
-      width: aspectSize?.width ?? 1024,
-      height: aspectSize?.height ?? 1024,
-      image_size: {
-        width: aspectSize?.width ?? 1024,
-        height: aspectSize?.height ?? 1024
-      }
-    };
+    // 构建请求：图生图 vs 文生图使用不同的 endpoint 和 payload 格式
+    // 图生图必须走 chat/completions + image_config，把图片嵌入 messages 数组；
+    // /v1/images/generations 端点不支持 image/image_url 参数（标准 OpenAI API 不含这些字段），
+    // 如果硬塞会被上游静默忽略，导致生成结果与参考图毫无关系。
+    const hasReferenceImage = Boolean(referenceImage);
+    const asyncEndpoint = hasReferenceImage
+      ? DEFAULT_GPT_IMAGE2_API_ENDPOINT.replace(/\/images\/generations\/?$/i, '/chat/completions')
+      : DEFAULT_GPT_IMAGE2_API_ENDPOINT;
 
-    if (aspectKey) payload.aspect_ratio = aspectKey;
-    if (referenceImage) {
-      payload.image = referenceImage;
-      payload.image_url = referenceImage;
+    let payload: any;
+    if (hasReferenceImage) {
+      // 图生图：chat/completions + image_config 格式
+      const extraRefs = normalizedRefs.filter(ref => ref !== referenceImage).slice(0, 1);
+      payload = {
+        model,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: finalPrompt },
+            { type: "image_url", image_url: { url: referenceImage } },
+            ...extraRefs.map(ref => ({ type: "image_url", image_url: { url: ref } }))
+          ]
+        }],
+        stream: false,
+        max_tokens: 4096,
+        image_config: {
+          n: 1,
+          size: "1024x1024",
+          response_format: "b64_json"
+        }
+      };
+    } else {
+      // 文生图：/v1/images/generations 标准格式
+      payload = {
+        model,
+        prompt: finalPrompt,
+        n: 1,
+        response_format: "url",
+        size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
+        width: aspectSize?.width ?? 1024,
+        height: aspectSize?.height ?? 1024,
+        image_size: {
+          width: aspectSize?.width ?? 1024,
+          height: aspectSize?.height ?? 1024
+        }
+      };
+      if (aspectKey) payload.aspect_ratio = aspectKey;
     }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), requestedResolution === "4K" ? 9 * 60 * 1000 : 7 * 60 * 1000);
-    const response = await fetch(DEFAULT_GPT_IMAGE2_API_ENDPOINT, {
+    const response = await fetch(asyncEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -532,7 +561,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
           userId: user?.id ?? null,
           userEmail: user?.email ?? null,
           model,
-          endpoint: DEFAULT_GPT_IMAGE2_API_ENDPOINT,
+          endpoint: asyncEndpoint,
           requestPrompt: String(finalPrompt).slice(0, 2000),
           success: false,
           errorMessage: parsedError.message,
@@ -562,7 +591,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
         userId: user?.id ?? null,
         userEmail: user?.email ?? null,
         model,
-        endpoint: DEFAULT_GPT_IMAGE2_API_ENDPOINT,
+        endpoint: asyncEndpoint,
         requestPrompt: String(finalPrompt).slice(0, 2000),
         imageUrl: String(imageUrl).slice(0, 2000),
         responseText: JSON.stringify(data || {}).slice(0, 2000),
@@ -699,6 +728,14 @@ export async function POST(req: Request) {
       ? (isGpt2Model ? finalModel : DEFAULT_GPT_IMAGE2_MODEL_NAME)
       : finalModel;
 
+    // GPT-Image-2 图生图：/v1/images/generations 端点不支持 image/image_url 参数（标准 OpenAI API 不含这些字段），
+    // 必须改用 chat/completions 格式，将参考图嵌入 messages 数组 + image_config 才能生效。
+    // 否则图片数据会被上游 API 静默忽略，导致生成结果与原图毫无关系。
+    const isGpt2Img2Img = isGpt2Model && isImg2Img;
+    if (isGpt2Img2Img && isImagesGenerationEndpoint(finalEndpoint)) {
+      finalEndpoint = finalEndpoint.replace(/\/images\/generations\/?$/i, '/chat/completions');
+    }
+
     if (isImg2Img && !isVideo && !isGpt2Model) {
       if (isAgnes) {
         return respond({ error: "图生图功能暂不支持 Agnes 模型，请使用 GPT-Image-2 模式" }, 400);
@@ -709,8 +746,8 @@ export async function POST(req: Request) {
     }
     
     const hasReferenceImages = Array.isArray(reference_images) && reference_images.length > 0 && !isVideo;
-    // GPT-Image-2 新接口使用 /images/generations，支持文生图，也可携带单图参考
-    const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint) && (!hasReferenceImages || isGpt2Model);
+    // GPT-Image-2 文生图使用 /images/generations；图生图强制走 chat/completions（图片在 messages 中）
+    const useImagesGenerationApi = !isVideo && isImagesGenerationEndpoint(finalEndpoint) && (!hasReferenceImages || isGpt2Model) && !isGpt2Img2Img;
     // 图生图使用 /images/edits 端点
     // GPT-Image-2 图生图走 chat/completions 格式（加上 image_config），不走 edits
     const useImagesEditsApi = !isVideo && isImg2Img && !isGpt2Model && isImagesEditsEndpoint(finalEndpoint);
@@ -725,7 +762,11 @@ export async function POST(req: Request) {
         finalEndpoint,
         finalModel,
         actualModel,
-        useImagesGenerationApi
+        useImagesGenerationApi,
+        isImg2Img,
+        isGpt2Img2Img,
+        hasImageUrl: Boolean(image_url),
+        hasReferenceImages
       });
     }
 
@@ -1317,7 +1358,7 @@ export async function POST(req: Request) {
         if (!isVideo && (isGrokImagineModel(actualModel) || isGpt2Model)) {
           requestPayload.image_config = {
             n: 1,
-            size: `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
+            size: isGpt2Img2Img ? "1024x1024" : `${aspectSize?.width ?? 1024}x${aspectSize?.height ?? 1024}`,
             response_format: "b64_json"
           };
         }
@@ -1327,11 +1368,13 @@ export async function POST(req: Request) {
         requestPayload.duration = videoDuration;
       }
       // 图生图模式强制使用 1024x1024（API 限制）
+      // 注意：GPT-Image-2 图生图走 chat/completions + image_config 路径，size 已在 image_config 中设置，
+      // 无需再添加顶层 size 字段
       if (isImg2Img && useImagesGenerationApi) {
         requestPayload.size = "1024x1024";
         requestPayload.width = 1024;
         requestPayload.height = 1024;
-      } else if (aspectSize) {
+      } else if (aspectSize && !isGpt2Img2Img) {
         requestPayload.size = `${aspectSize.width}x${aspectSize.height}`;
         requestPayload.width = aspectSize.width;
         requestPayload.height = aspectSize.height;
