@@ -470,9 +470,6 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
   const aspectKey = typeof input.aspectRatio === "string" ? input.aspectRatio.trim() : "";
   const requestedResolution = typeof input.resolution === "string" ? input.resolution.trim().toUpperCase() : "1K";
   const aspectSize = getImageSize(aspectKey, requestedResolution, true);
-  const finalPrompt = aspectSize
-    ? `${input.prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
-    : input.prompt;
 
   try {
     const normalizedMainImage = await normalizeImageReferenceForGpt(input.image_url);
@@ -485,6 +482,9 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
     // 图生图必须走 /v1/images/edits 端点，将参考图以 input_image 格式传入 image 数组；
     // /v1/images/generations 端点不支持 image 参数，硬塞会被上游静默忽略。
     const hasReferenceImage = Boolean(referenceImage);
+    const finalPrompt = aspectSize && !hasReferenceImage
+      ? `${input.prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
+      : input.prompt;
     const asyncEndpoint = hasReferenceImage
       ? DEFAULT_GPT_IMAGE2_API_ENDPOINT.replace(/\/images\/generations\/?$/i, '/images/edits')
       : DEFAULT_GPT_IMAGE2_API_ENDPOINT;
@@ -496,7 +496,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
       const allImages = [referenceImage, ...normalizedRefs.filter(ref => ref !== referenceImage).slice(0, 1)];
       payload = {
         model,
-        image: allImages.map(img => ({
+        images: allImages.map(img => ({
           type: "input_image",
           image_url: img
         })),
@@ -524,6 +524,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), requestedResolution === "4K" ? 9 * 60 * 1000 : 7 * 60 * 1000);
+    const startedAt = Date.now();
     const response = await fetch(asyncEndpoint, {
       method: "POST",
       headers: {
@@ -563,6 +564,7 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
       return;
     }
 
+    const elapsedMs = Date.now() - startedAt;
     const imageUrl = extractImageUrlFromAny(data);
     if (!imageUrl) {
       task.status = "failed";
@@ -571,7 +573,11 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
       return;
     }
 
-    const result = buildImageClientPayload(data || {}, imageUrl, model, model);
+    const result = {
+      ...buildImageClientPayload(data || {}, imageUrl, model, model),
+      elapsedMs,
+      performanceHint: hasReferenceImage ? "图生图已使用压缩参考图和异步队列，前端无需长时间阻塞。" : undefined
+    };
     task.status = "succeeded";
     task.imageUrl = imageUrl;
     task.result = result;
@@ -592,9 +598,17 @@ const runGptImageTask = async (taskId: string, input: GptImageTaskInput, user: {
     }).catch((err: unknown) => console.error("[generate-image] async task log failed:", err));
   } catch (error) {
     task.status = "failed";
-    task.error = error instanceof Error && error.name === "AbortError"
+    const errorMessage = error instanceof Error && error.name === "AbortError"
       ? "GPT 高清图生成超时，请稍后重试或降低清晰度"
       : (error instanceof Error ? error.message : String(error));
+    task.error = errorMessage;
+    console.error("[generate-image] async GPT image task failed:", {
+      taskId,
+      model,
+      hasImage: Boolean(input.image_url),
+      elapsedMs: Date.now() - startedAt,
+      error: errorMessage
+    });
     task.updatedAt = Date.now();
   }
 };
@@ -778,7 +792,7 @@ export async function POST(req: Request) {
     const aspectKey = typeof aspectRatio === "string" ? aspectRatio.trim() : "";
     const requestedResolution = typeof resolution === "string" ? resolution.trim().toUpperCase() : "1K";
     const aspectSize = !isVideo ? getImageSize(aspectKey, requestedResolution, Boolean(isGpt2Model)) : null;
-    const finalPrompt = aspectSize
+    const finalPrompt = aspectSize && !isImg2Img
       ? `${prompt}\n\nAspect ratio: ${aspectKey}. Output must be exactly ${aspectSize.width}x${aspectSize.height} (STRICT).`
       : prompt;
 
@@ -1318,7 +1332,7 @@ export async function POST(req: Request) {
           const allRefImages = [finalImageUrl, ...validRefImages.filter(ref => ref !== finalImageUrl).slice(0, 1)];
           requestPayload = {
             model: actualModel,
-            image: allRefImages.map(img => ({
+            images: allRefImages.map(img => ({
               type: "input_image",
               image_url: img
             })),

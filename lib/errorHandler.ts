@@ -86,11 +86,14 @@ export function parseApiError(statusCode: number, responseText: string): ErrorRe
     return buildErrorResponse(ErrorCode.SECURITY_CLOUDFLARE_CHALLENGE, `Status: ${statusCode}`);
   }
 
-  // 检测图片上传失败
+  // 检测图片上传/图生图参数失败
   if (
     responseText.includes('AssetsUploadReverse') ||
     responseText.includes('Upload failed') ||
-    responseText.includes('upstream_error')
+    responseText.includes('upstream_error') ||
+    responseText.includes('images[].image_url is required') ||
+    lowered.includes('does not represent a valid image') ||
+    lowered.includes('supported image formats')
   ) {
     return buildErrorResponse(ErrorCode.VALIDATION_INVALID_IMAGE_URL, responseText);
   }

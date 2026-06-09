@@ -645,8 +645,8 @@ Example Output:
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const MAX_SIZE = 1024;
-    const JPEG_QUALITY = 0.8;
+    const MAX_SIZE = 768;
+    const IMAGE_QUALITY = 0.72;
 
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
@@ -676,7 +676,7 @@ Example Output:
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      const compressed = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+      const compressed = canvas.toDataURL('image/webp', IMAGE_QUALITY);
       setUploadedImage(compressed);
     };
 
@@ -698,8 +698,8 @@ Example Output:
 
     const filesToProcess = Array.from(files).slice(0, remaining);
     filesToProcess.forEach((file) => {
-      const MAX_SIZE = 1024;
-      const JPEG_QUALITY = 0.8;
+      const MAX_SIZE = 768;
+      const IMAGE_QUALITY = 0.72;
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
       img.onload = () => {
@@ -727,7 +727,7 @@ Example Output:
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        const compressed = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+        const compressed = canvas.toDataURL('image/webp', IMAGE_QUALITY);
         setReferenceImages((prev) => prev.length < 2 ? [...prev, compressed] : prev);
       };
       img.onerror = () => {
@@ -1016,6 +1016,7 @@ Example Output:
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": buildImageIdempotencyKey(prompt, { kind: "txt2img" }),
           ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
@@ -1203,7 +1204,7 @@ Example Output:
     setImageMeta(null);
 
     const controller = new AbortController();
-    const useAsyncGptImageTask = gptImageResolution === "2K" || gptImageResolution === "4K";
+    const useAsyncGptImageTask = true; // 图生图统一走后端任务队列，避免长请求被浏览器/网关中断
     const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? 420000 : 320000);
 
     try {
@@ -1227,6 +1228,7 @@ Example Output:
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": buildImageIdempotencyKey(promptInstruction, { kind: "img2img", imageSeed }),
           ...(token ? { "Authorization": `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
@@ -1249,7 +1251,7 @@ Example Output:
 
       let data = await response.json();
       if (data.taskId && data.status && data.status !== "succeeded") {
-        setGptImageTaskStatus(data.status === "queued" ? "GPT 高清图生图任务已排队..." : "GPT 高清图生图生成中，2K/4K 会比较慢...");
+        setGptImageTaskStatus(data.status === "queued" ? "GPT 图生图任务已排队..." : "GPT 图生图生成中，正在处理参考图...");
         data = await pollGptImageTask(data.taskId, controller);
       }
       if (data.imageUrl) {
