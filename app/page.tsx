@@ -105,6 +105,28 @@ export default function Home() {
   const [gptImageResolution, setGptImageResolution] = useState<GptResolutionOption>("1K");
   const imageAspectRatioCss = imageAspectRatio === "auto" ? "1 / 1" : imageAspectRatio.replace(":", " / ");
   const imagePreviewStyle = !isTxt2VideoMode ? { aspectRatio: imageAspectRatioCss, minHeight: "360px" } : undefined;
+  type ModelUsageStatus = "normal" | "busy" | "unavailable";
+  type ModelUsageItem = {
+    key: "grok" | "gpt";
+    name: string;
+    status: ModelUsageStatus;
+    total: number;
+    success: number;
+    failed: number;
+    failureRate: number;
+    lastUsedAt: string | null;
+    updatedAt: string;
+  };
+  const modelStatusText: Record<ModelUsageStatus, string> = {
+    normal: "正常",
+    busy: "繁忙",
+    unavailable: "不可用"
+  };
+  const modelStatusClass: Record<ModelUsageStatus, string> = {
+    normal: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10",
+    busy: "border-amber-500/30 text-amber-300 bg-amber-500/10",
+    unavailable: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+  };
   
   // 默认配置（如果用户不填，就用空的，后端会自动使用默认配置）
   // 1. 提示词生成配置 (Prompt API)
@@ -123,6 +145,12 @@ export default function Home() {
   const [showSponsorBoard, setShowSponsorBoard] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [guestLimits, setGuestLimits] = useState({ prompt: 10, image: 5, video: 0 });
+  const [modelUsageItems, setModelUsageItems] = useState<ModelUsageItem[]>([
+    { key: "grok", name: "Grok", status: "normal", total: 0, success: 0, failed: 0, failureRate: 0, lastUsedAt: null, updatedAt: "" },
+    { key: "gpt", name: "GPT", status: "normal", total: 0, success: 0, failed: 0, failureRate: 0, lastUsedAt: null, updatedAt: "" }
+  ]);
+  const [modelUsageUpdatedAt, setModelUsageUpdatedAt] = useState("");
+  const [modelUsageError, setModelUsageError] = useState("");
 
   const sponsorBoard = [
     { name: "迷朔如梦", amount: "5.00", time: "4月7日 19:58" },
@@ -286,6 +314,28 @@ export default function Home() {
     const scope = getSettingScope();
     saveSetting(scope, "gpt_image_resolution", resolution);
   };
+
+  const fetchModelUsageStatus = async () => {
+    try {
+      const res = await fetch('/api/model-usage-status', { cache: 'no-store' });
+      if (!res.ok) throw new Error('获取模型使用情况失败');
+      const data = await res.json();
+      if (Array.isArray(data.models)) {
+        setModelUsageItems(data.models);
+      }
+      setModelUsageUpdatedAt(data.updatedAt || new Date().toISOString());
+      setModelUsageError("");
+    } catch (err) {
+      console.error("Model usage status fetch failed:", err);
+      setModelUsageError("状态同步失败");
+    }
+  };
+
+  useEffect(() => {
+    fetchModelUsageStatus();
+    const timer = setInterval(fetchModelUsageStatus, 20 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -1720,6 +1770,19 @@ Example Output:
               </span>
             </div>
           )}
+          <div className="flex flex-wrap justify-center gap-3 text-xs font-mono text-theme-text-muted mt-4">
+            {modelUsageItems.map((item) => (
+              <span key={item.key} className={`px-4 py-2 rounded-xl border backdrop-blur-sm ${modelStatusClass[item.status]}`} title={`最近20分钟：成功 ${item.success} 次，失败 ${item.failed} 次`}>
+                <span className="inline-flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${item.status === 'busy' ? 'bg-amber-300' : 'bg-emerald-400'}`} />
+                  {item.name}：{modelStatusText[item.status]}（{item.total}次）
+                </span>
+              </span>
+            ))}
+            <span className="px-4 py-2 rounded-xl border bg-theme-bg-input backdrop-blur-sm border-white/10 text-theme-text-muted">
+              {modelUsageError || `20分钟自动更新${modelUsageUpdatedAt ? ` · ${new Date(modelUsageUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
+            </span>
+          </div>
         </div>
 
         {/* Auth Modal (kept from original) */}
