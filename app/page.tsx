@@ -15,7 +15,7 @@ export default function Home() {
   const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
   const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/images/generations";
   const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
-  const GPT_PROMPT_API_KEY = process.env.NEXT_PUBLIC_GPT_PROMPT_API_KEY || GPT_IMAGE_2_API_KEY;
+  const GPT_PROMPT_API_KEY = process.env.NEXT_PUBLIC_GPT_PROMPT_API_KEY || "sk-a0f33e1452ca5f6a07381445ba53218e7f39aa16a7bfac7e8a916f2bf9529bd5";
   const GPT_PROMPT_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_PROMPT_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/chat/completions";
   const GPT_PROMPT_MODEL = process.env.NEXT_PUBLIC_GPT_PROMPT_MODEL || "gpt-5.5";
   const FIXED_NEGATIVE_PROMPT = "sharp edges, high contrast, messy background, small scattered color patches, complex texture overlays, excessive detail, grainy rendering, over-sharpening";
