@@ -1173,7 +1173,7 @@ The result must be **sharp, crystal-clear, and professional product photography 
 
     // 硬扛方案：前端直连默认配置
     const FALLBACK_ENDPOINT = "https://apifree.rensumo.top/v1/chat/completions";
-    const FALLBACK_KEY = "sk-4SY28cVkJZKAckHGavYlJGyF9SfuFCs7dpbJGbBYEREtG8Oe";
+    const FALLBACK_KEY = "sk-a0f33e1452ca5f6a07381445ba53218e7f39aa16a7bfac7e8a916f2bf9529bd5";
     const FALLBACK_MODEL = isVideoMode ? "grok-3" : "openai/gpt-oss-120b";
     
     const finalEndpoint = apiEndpoint || FALLBACK_ENDPOINT;
