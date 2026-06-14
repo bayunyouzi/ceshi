@@ -13,15 +13,17 @@ export default function Home() {
   const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
   // GPT-Image-2 配置 - 使用独立的 API Key
   const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
-  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/images/generations";
+  const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://ai.bayunzi.shop/v1/images/generations";
   const GPT_IMAGE_2_MODEL = process.env.NEXT_PUBLIC_GPT_IMAGE_2_MODEL || "gpt-image-2";
+  // 图生图（未点击 GPT 模式）使用 grok-imagine-image-edit
+  const GROK_IMG2IMG_MODEL = process.env.NEXT_PUBLIC_GROK_IMG2IMG_MODEL || "grok-imagine-image-edit";
   const GPT_PROMPT_API_KEY = process.env.NEXT_PUBLIC_GPT_PROMPT_API_KEY || "sk-a0f33e1452ca5f6a07381445ba53218e7f39aa16a7bfac7e8a916f2bf9529bd5";
   const GPT_PROMPT_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_PROMPT_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/chat/completions";
   const GPT_PROMPT_MODEL = process.env.NEXT_PUBLIC_GPT_PROMPT_MODEL || "gpt-5.5";
   const FIXED_NEGATIVE_PROMPT = "sharp edges, high contrast, messy background, small scattered color patches, complex texture overlays, excessive detail, grainy rendering, over-sharpening";
-  const FRONTEND_IMG_API_KEY = process.env.NEXT_PUBLIC_IMG_API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-  const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "http://bayunzi.shop/v1/chat/completions";
-  const FRONTEND_IMG_MODEL_NAME = process.env.NEXT_PUBLIC_IMG_MODEL_NAME || "grok-imagine-image-lite";
+  const FRONTEND_IMG_API_KEY = process.env.NEXT_PUBLIC_IMG_API_KEY || "sk-ce7ab016a2ddb6b67bb6ea5c5d8212099263866fd8d76799ed89e0b5936510c3";
+  const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "https://ai.bayunzi.shop/v1/chat/completions";
+  const FRONTEND_IMG_MODEL_NAME = process.env.NEXT_PUBLIC_IMG_MODEL_NAME || "grok-imagine-image";
   const FRONTEND_VIDEO_API_KEY = process.env.NEXT_PUBLIC_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
   const FRONTEND_VIDEO_API_ENDPOINT = process.env.NEXT_PUBLIC_VIDEO_API_ENDPOINT || "https://api.x.ai/v1/videos/generations";
   const FRONTEND_VIDEO_MODEL_NAME = process.env.NEXT_PUBLIC_VIDEO_MODEL_NAME || "grok-imagine-video";
@@ -1295,7 +1297,9 @@ Example Output:
     setImageMeta(null);
 
     const controller = new AbortController();
-    const useAsyncGptImageTask = true; // 图生图统一走后端任务队列，避免长请求被浏览器/网关中断
+    // 点击 GPT 模式：走 gpt-image-2 + 后端异步任务队列；未点击：走 grok-imagine-image-edit 同步请求
+    const img2imgModel = isGptImage2Mode ? GPT_IMAGE_2_MODEL : GROK_IMG2IMG_MODEL;
+    const useAsyncGptImageTask = isGptImage2Mode;
     const timeoutId = setTimeout(() => controller.abort(), useAsyncGptImageTask ? GPT_IMAGE_ASYNC_TIMEOUT_MS : GPT_IMAGE_SYNC_TIMEOUT_MS);
 
     try {
@@ -1325,9 +1329,9 @@ Example Output:
         body: JSON.stringify({
           prompt: promptInstruction,
           image_url: uploadedImage,
-          modelName: GPT_IMAGE_2_MODEL,
+          modelName: img2imgModel,
           aspectRatio: imageAspectRatio,
-          resolution: gptImageResolution,
+          resolution: isGptImage2Mode ? gptImageResolution : undefined,
           async: useAsyncGptImageTask,
           ...(referenceImages.length > 0 ? { reference_images: referenceImages } : {})
         }),

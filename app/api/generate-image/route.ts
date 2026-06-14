@@ -12,16 +12,19 @@ interface ValidationResult {
   error?: { errorCode: string; errorMessage: string; errorDetail: string; shouldRetry: boolean; retryAfter?: number };
 }
 
-const DEFAULT_FREE_IMG_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-const DEFAULT_BACKUP_IMG_API_KEY = "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-const DEFAULT_GROK2API_KEY = process.env.GROK2API_KEY || "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo";
-const DEFAULT_GROK2API_ENDPOINT = process.env.GROK2API_ENDPOINT || "http://bayunzi.shop/v1/chat/completions";
-const DEFAULT_GROK2API_MODEL_NAME = process.env.GROK2API_MODEL || "grok-imagine-image-lite";
+// Grok 生图（文生图 / 图生图）统一使用 ai.bayunzi.shop 的 grok key
+const DEFAULT_GROK_IMG_API_KEY = "sk-ce7ab016a2ddb6b67bb6ea5c5d8212099263866fd8d76799ed89e0b5936510c3";
+const DEFAULT_FREE_IMG_API_KEY = DEFAULT_GROK_IMG_API_KEY;
+const DEFAULT_BACKUP_IMG_API_KEY = DEFAULT_GROK_IMG_API_KEY;
+const DEFAULT_GROK2API_KEY = process.env.GROK2API_KEY || DEFAULT_GROK_IMG_API_KEY;
+const DEFAULT_GROK2API_ENDPOINT = process.env.GROK2API_ENDPOINT || "https://ai.bayunzi.shop/v1/chat/completions";
+const DEFAULT_GROK2API_MODEL_NAME = process.env.GROK2API_MODEL || "grok-imagine-image";
 const DEFAULT_TXT2IMG_API_KEY = DEFAULT_GROK2API_KEY;
 const DEFAULT_TXT2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;
 const DEFAULT_TXT2IMG_MODEL_NAME = DEFAULT_GROK2API_MODEL_NAME;
 
-const DEFAULT_IMG2IMG_API_KEY = DEFAULT_GROK2API_KEY;
+// 图生图（未点击 GPT 模式）：grok-imagine-image-edit
+const DEFAULT_IMG2IMG_API_KEY = DEFAULT_GROK_IMG_API_KEY;
 const DEFAULT_IMG2IMG_API_ENDPOINT = DEFAULT_GROK2API_ENDPOINT;
 const DEFAULT_IMG2IMG_MODEL_NAME = "grok-imagine-image-edit";
 // GPT-Image-2 默认配置 - 使用独立的 API Key
@@ -34,7 +37,7 @@ const configuredGptImage2ApiKey = process.env.GPT_IMAGE2_API_KEY?.trim();
 const DEFAULT_GPT_IMAGE2_API_KEY = configuredGptImage2ApiKey && !INVALID_GPT_IMAGE2_API_KEYS.has(configuredGptImage2ApiKey)
   ? configuredGptImage2ApiKey
   : GPT_IMAGE2_API_KEY_FALLBACK;
-const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/images/generations";
+const DEFAULT_GPT_IMAGE2_API_ENDPOINT = process.env.GPT_IMAGE2_API_ENDPOINT || "https://ai.bayunzi.shop/v1/images/generations";
 const DEFAULT_GPT_IMAGE2_MODEL_NAME = "gpt-image-2";
 
 const DEFAULT_TXT2VIDEO_API_KEY = process.env.XAI_VIDEO_API_KEY || "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh";
@@ -744,8 +747,9 @@ export async function POST(req: Request) {
       ? (apiEndpoint || defaultEndpoint)
       : (isGpt2Model ? DEFAULT_GPT_IMAGE2_API_ENDPOINT : normalizeEndpoint(apiEndpoint, defaultEndpoint, "image", isImg2Img));
     const finalModel = isVideo ? (modelName || DEFAULT_TXT2VIDEO_MODEL_NAME) : (modelName || defaultModel);
+    // 图生图：点击 GPT 模式走 gpt-image-2；未点击则使用 grok-imagine-image-edit
     const actualModel = isImg2Img && !isVideo
-      ? (isGpt2Model ? finalModel : DEFAULT_GPT_IMAGE2_MODEL_NAME)
+      ? (isGpt2Model ? finalModel : DEFAULT_IMG2IMG_MODEL_NAME)
       : finalModel;
 
     // GPT-Image-2 图生图：/v1/images/generations 端点不支持 image 参数，
@@ -760,9 +764,7 @@ export async function POST(req: Request) {
       if (isAgnes) {
         return respond({ error: "图生图功能暂不支持 Agnes 模型，请使用 GPT-Image-2 模式" }, 400);
       }
-      if (isGrokImagineModel(finalModel)) {
-        return respond({ error: "图生图功能暂不支持 Grok 模型，请使用 GPT-Image-2 模式" }, 400);
-      }
+      // Grok 图生图（grok-imagine-image-edit）通过 /chat/completions 视觉消息格式走，下方逻辑已支持
     }
     
     const hasReferenceImages = Array.isArray(reference_images) && reference_images.length > 0 && !isVideo;
@@ -771,11 +773,10 @@ export async function POST(req: Request) {
     // 图生图使用 /images/edits 端点（包括 GPT-Image-2 图生图）
     const useImagesEditsApi = !isVideo && isImg2Img && isImagesEditsEndpoint(finalEndpoint) && (!isGpt2Model || isGpt2Img2Img);
 
-    // 调试日志：GPT-Image-2 请求参数
-    if (isGpt2Model) {
-      console.log('[GPT-Image-2 Debug] Request params:', {
-        receivedApiKey: apiKey ? `${apiKey.slice(0, 8)}...` : 'undefined',
-        receivedEndpoint: apiEndpoint,
+    // 调试日志：生图请求参数（覆盖 grok / gpt-image-2 全部场景）
+    if (!isVideo) {
+      console.log('[generate-image Debug] Request params:', {
+        scene: isGpt2Model ? (isImg2Img ? 'GPT图生图' : 'GPT文生图') : (isImg2Img ? 'Grok图生图' : 'Grok文生图'),
         receivedModel: modelName,
         finalApiKey: finalApiKey ? `${finalApiKey.slice(0, 8)}...` : 'undefined',
         finalEndpoint,
@@ -784,6 +785,7 @@ export async function POST(req: Request) {
         useImagesGenerationApi,
         useImagesEditsApi,
         isImg2Img,
+        isGpt2Model: Boolean(isGpt2Model),
         isGpt2Img2Img,
         hasImageUrl: Boolean(image_url),
         hasReferenceImages
