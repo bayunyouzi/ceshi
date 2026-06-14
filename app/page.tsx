@@ -9,8 +9,8 @@ import { img2ImgPrompts, img2ImgEffectOptions } from "../lib/img2imgPrompts";
 const AuthModal = dynamic(() => import("./components/AuthModal"), { ssr: false });
 
 export default function Home() {
-  const DEFAULT_PROMPT_ENDPOINT = "https://apifree.rensumo.top/";
-  const DEFAULT_PROMPT_MODEL = "openai/gpt-oss-20b";
+  const DEFAULT_PROMPT_ENDPOINT = "https://ai.bayunzi.shop/v1/chat/completions";
+  const DEFAULT_PROMPT_MODEL = "grok-4.20-0309-non-reasoning-console";
   // GPT-Image-2 配置 - 使用独立的 API Key
   const GPT_IMAGE_2_API_KEY = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_KEY || "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa";
   const GPT_IMAGE_2_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_IMAGE_2_API_ENDPOINT || "https://ai.bayunzi.shop/v1/images/generations";
@@ -18,8 +18,8 @@ export default function Home() {
   // 图生图（未点击 GPT 模式）使用 grok-imagine-image-edit
   const GROK_IMG2IMG_MODEL = process.env.NEXT_PUBLIC_GROK_IMG2IMG_MODEL || "grok-imagine-image-edit";
   const GPT_PROMPT_API_KEY = process.env.NEXT_PUBLIC_GPT_PROMPT_API_KEY || "sk-a0f33e1452ca5f6a07381445ba53218e7f39aa16a7bfac7e8a916f2bf9529bd5";
-  const GPT_PROMPT_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_PROMPT_API_ENDPOINT || "https://yzgpt.zeabur.app/v1/chat/completions";
-  const GPT_PROMPT_MODEL = process.env.NEXT_PUBLIC_GPT_PROMPT_MODEL || "gpt-5.5";
+  const GPT_PROMPT_API_ENDPOINT = process.env.NEXT_PUBLIC_GPT_PROMPT_API_ENDPOINT || "https://ai.bayunzi.shop/v1/chat/completions";
+  const GPT_PROMPT_MODEL = process.env.NEXT_PUBLIC_GPT_PROMPT_MODEL || "gpt-5.4";
   const FIXED_NEGATIVE_PROMPT = "sharp edges, high contrast, messy background, small scattered color patches, complex texture overlays, excessive detail, grainy rendering, over-sharpening";
   const FRONTEND_IMG_API_KEY = process.env.NEXT_PUBLIC_IMG_API_KEY || "sk-ce7ab016a2ddb6b67bb6ea5c5d8212099263866fd8d76799ed89e0b5936510c3";
   const FRONTEND_IMG_API_ENDPOINT = process.env.NEXT_PUBLIC_IMG_API_ENDPOINT || "https://ai.bayunzi.shop/v1/chat/completions";
@@ -1405,7 +1405,7 @@ Example Output:
     const useCustomPromptConfig = Boolean(apiKey || apiEndpoint || modelName);
     const useGptPromptConfig = isGptImage2Mode && !isVideoMode && !isTxt2VideoMode;
 
-    const FALLBACK_MODEL = isVideoMode ? "grok-4.20-0309-non-reasoning" : (isDeepThinking ? "grok-4.20-0309-reasoning" : "grok-4.20-0309-non-reasoning");
+    const FALLBACK_MODEL = isVideoMode ? "grok-4.20-0309-non-reasoning-console" : (isDeepThinking ? "grok-4.20-0309-reasoning" : "grok-4.20-0309-non-reasoning-console");
     
     const finalEndpoint = isAgnesMode ? `${AGNES_BASE_URL}/chat/completions` : (useGptPromptConfig ? GPT_PROMPT_API_ENDPOINT : (apiEndpoint || undefined));
     const finalApiKey = isAgnesMode ? AGNES_API_KEY : (useGptPromptConfig ? GPT_PROMPT_API_KEY : (apiKey || undefined));
