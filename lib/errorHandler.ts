@@ -151,6 +151,7 @@ const ALLOWED_PROMPT_MODELS = [
   'grok-4.20-0309',
   'grok-4.20-0309-reasoning',
   'grok-4.20-0309-non-reasoning',
+  'grok-4.20-0309-non-reasoning-console',
   'openai/gpt-oss-120b',
   'gpt-5.5',
 ];

@@ -20,7 +20,7 @@ const DEFAULT_CONFIG = {
   GROK_IMAGE_MODEL: "grok-imagine-image-lite",
   GROK_IMG2IMG_MODEL: "grok-imagine-image-lite",
   GPT_IMAGE2_API_KEY: "sk-eccd9e1e2ab7bdd6e808e4f8f41c1adfb66e7983c057eaf5fe7f879b5bb3bdb2",
-  GPT_IMAGE2_API_ENDPOINT: "https://shumai.siphot.com/v1",
+  GPT_IMAGE2_API_ENDPOINT: "https://shumai.siphot.com/v1/images/generations",
   GPT_IMAGE2_MODEL: "gpt-image-2",
   VIDEO_API_KEY: "xai-I1k5xdu1X9fAxANwIXP2sBSdrJZkravAOfbDffwv0P6YgGFj3u597hVEb6B3kvOeClJFNCkx7vQeJsnh",
   VIDEO_API_ENDPOINT: "https://api.x.ai/v1/videos/generations",

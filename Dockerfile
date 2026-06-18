@@ -58,6 +58,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
+# Copy prisma CLI for runtime db push
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+
 # Copy SQLite database template
 RUN mkdir -p prisma-template
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/dev.db ./prisma-template/dev.db
@@ -66,5 +69,5 @@ USER nextjs
 
 EXPOSE 3000
 
-# Always use bundled SQLite at runtime
-CMD ["sh", "-c", "export DATABASE_URL=file:/app/prisma/dev.db && if [ ! -f ./prisma/dev.db ]; then cp ./prisma-template/dev.db ./prisma/dev.db; fi && node server.js"]
+# Always use bundled SQLite at runtime, ensure schema + default configs exist
+CMD ["sh", "-c", "export DATABASE_URL=file:/app/prisma/dev.db && if [ ! -f ./prisma/dev.db ]; then cp ./prisma-template/dev.db ./prisma/dev.db; fi && npx prisma db push && node scripts/seed-config.js && node server.js"]

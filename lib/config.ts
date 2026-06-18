@@ -22,7 +22,7 @@ export const DEFAULT_CONFIG: Record<string, string> = {
 
   // --- GPT-Image-2 API ---
   GPT_IMAGE2_API_KEY: "sk-eccd9e1e2ab7bdd6e808e4f8f41c1adfb66e7983c057eaf5fe7f879b5bb3bdb2",
-  GPT_IMAGE2_API_ENDPOINT: "https://shumai.siphot.com/v1",
+  GPT_IMAGE2_API_ENDPOINT: "https://shumai.siphot.com/v1/images/generations",
   GPT_IMAGE2_MODEL: "gpt-image-2",
 
   // --- 视频生成 API ---
