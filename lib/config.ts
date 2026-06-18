@@ -5,9 +5,9 @@ import { prisma } from './db';
 // ============================================================
 export const DEFAULT_CONFIG: Record<string, string> = {
   // --- Grok 提示词 API ---
-  GROK_PROMPT_API_KEY: "sk-9d3afec1c7abfc067f912d68802ffcc260025b179d04e62c25f201dd43fe8680",
-  GROK_PROMPT_API_ENDPOINT: "https://ai.bayunzi.shop/v1/chat/completions",
-  GROK_PROMPT_MODEL: "grok-4.20-0309-non-reasoning-console",
+  GROK_PROMPT_API_KEY: "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo",
+  GROK_PROMPT_API_ENDPOINT: "http://124.156.219.145:8000/v1",
+  GROK_PROMPT_MODEL: "grok-4.20-0309-non-reasoning",
 
   // --- Vision API（图生文/反推提示词）---
   VISION_API_KEY: "sk-w7Eit87AWrFGwLYLrIcSOgdDW204j0euC2Zlg5DACz4xx7nT",
@@ -15,14 +15,14 @@ export const DEFAULT_CONFIG: Record<string, string> = {
   VISION_MODEL: "grok-4.20-0309-non-reasoning",
 
   // --- Grok 生图 API ---
-  GROK_IMAGE_API_KEY: "sk-ce7ab016a2ddb6b67bb6ea5c5d8212099263866fd8d76799ed89e0b5936510c3",
-  GROK_IMAGE_API_ENDPOINT: "https://ai.bayunzi.shop/v1/chat/completions",
-  GROK_IMAGE_MODEL: "grok-imagine-image",
-  GROK_IMG2IMG_MODEL: "grok-imagine-image-edit",
+  GROK_IMAGE_API_KEY: "sk-aT8zbZSLI8mNNm91bVmAUqPLpVmpqIuo",
+  GROK_IMAGE_API_ENDPOINT: "http://124.156.219.145:8000/v1",
+  GROK_IMAGE_MODEL: "grok-imagine-image-lite",
+  GROK_IMG2IMG_MODEL: "grok-imagine-image-lite",
 
   // --- GPT-Image-2 API ---
-  GPT_IMAGE2_API_KEY: "sk-a74cccffcda0c7b918873bfbaac1dcb7c3914f9758838d797b7d6d10124795aa",
-  GPT_IMAGE2_API_ENDPOINT: "https://ai.bayunzi.shop/v1/images/generations",
+  GPT_IMAGE2_API_KEY: "sk-eccd9e1e2ab7bdd6e808e4f8f41c1adfb66e7983c057eaf5fe7f879b5bb3bdb2",
+  GPT_IMAGE2_API_ENDPOINT: "https://shumai.siphot.com/v1",
   GPT_IMAGE2_MODEL: "gpt-image-2",
 
   // --- 视频生成 API ---
