@@ -191,7 +191,7 @@ export function clearConfigCache(): void {
  * 解析管理员邮箱列表
  */
 export async function getAdminEmails(): Promise<string[]> {
-  const raw = await getConfig('ADMIN_EMAILS', '');
+  const raw = await getConfig('ADMIN_EMAILS');
   return raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 }
 

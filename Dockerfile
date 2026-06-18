@@ -23,6 +23,9 @@ COPY . .
 ENV DATABASE_URL="file:/app/prisma/dev.db"
 RUN npx prisma db push
 
+# Seed default configs (ADMIN_EMAILS, API keys, etc.)
+RUN node scripts/seed-config.js
+
 # Ensure public directory exists
 RUN mkdir -p public
 
